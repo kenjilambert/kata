@@ -437,16 +437,23 @@ export function renderGridToSvg({
           right: neighbors.right != null && neighbors.right === cell.color,
         };
         if (suppressed.top || suppressed.bottom || suppressed.left || suppressed.right) {
+          // máscara (branco=mostra, preto=esconde) em vez de um único path
+          // evenodd somando os retângulos de faixa: quando DUAS faixas
+          // perpendiculares se suprimem ao mesmo tempo (ex.: topo + esquerda),
+          // elas se sobrepõem no cantinho compartilhado — evenodd conta essa
+          // sobreposição como "dentro" de novo (par vira ímpar), reabrindo uma
+          // lasquinha de traço bem no canto que deveria ficar escondido. Faixas
+          // pretas numa máscara só se somam (preto sobre preto continua
+          // preto), então sobreposição nunca reabre nada.
           const band = Math.max(1, localOutlineWidthPx * 1.5);
           let bands = '';
-          if (suppressed.top) bands += `M 0 0 H ${cellBoxSize} V ${band} H 0 Z `;
-          if (suppressed.bottom) bands += `M 0 ${cellBoxSize} H ${cellBoxSize} V ${cellBoxSize - band} H 0 Z `;
-          if (suppressed.left) bands += `M 0 0 V ${cellBoxSize} H ${band} V 0 Z `;
-          if (suppressed.right) bands += `M ${cellBoxSize} 0 V ${cellBoxSize} H ${cellBoxSize - band} V 0 Z `;
-          const outer = `M 0 0 H ${cellBoxSize} V ${cellBoxSize} H 0 Z`;
-          const holeClipId = `cell-edge-hole-${globalClipCounter++}`;
-          clipDefsMarkup += `<clipPath id="${holeClipId}"><path d="${outer} ${bands}" fill-rule="evenodd" /></clipPath>\n`;
-          strokeGroup = `<g clip-path="url(#${holeClipId})">${strokeGroup}</g>`;
+          if (suppressed.top) bands += `<rect x="0" y="0" width="${cellBoxSize}" height="${band}" fill="#000" />`;
+          if (suppressed.bottom) bands += `<rect x="0" y="${cellBoxSize - band}" width="${cellBoxSize}" height="${band}" fill="#000" />`;
+          if (suppressed.left) bands += `<rect x="0" y="0" width="${band}" height="${cellBoxSize}" fill="#000" />`;
+          if (suppressed.right) bands += `<rect x="${cellBoxSize - band}" y="0" width="${band}" height="${cellBoxSize}" fill="#000" />`;
+          const holeMaskId = `cell-edge-hole-${globalClipCounter++}`;
+          clipDefsMarkup += `<mask id="${holeMaskId}"><rect x="0" y="0" width="${cellBoxSize}" height="${cellBoxSize}" fill="#fff" />${bands}</mask>\n`;
+          strokeGroup = `<g mask="url(#${holeMaskId})">${strokeGroup}</g>`;
         }
       }
       inner = fillMarkup + strokeGroup;
