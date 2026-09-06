@@ -15,6 +15,7 @@ import { hexToHsl, hslToHex } from '../../core/color.js';
 import { loadThemes, applyTheme, themePreviewColorsFor } from '../../core/themes.js';
 import { SHAPES } from '../grid-icons/shapes.js';
 import { framedGridDims, buildCustomShapeDefs } from '../grid-icons/generator.js';
+import { CATEGORY_ICONS } from '../../ui/categoryIcons.js';
 import { createVideoTilesEngine } from './engine.js';
 
 // mesmas 4 opções do seletor "Formato" do Azulejo (ver frameTileOptions em
@@ -91,12 +92,25 @@ export const videoTilesModule = {
     // Azulejo já ter carregado antes.
     const themes = await loadThemes();
     const themeKeys = Object.keys(themes);
+    // aba de categorias (ícone em cima, nome embaixo) só no mobile — mesmo
+    // mecanismo do Azulejo (ver .vt-controls/.gi-mobile-category-tabs no
+    // style.css), calculado 1x no mount (não muda se girar a tela depois,
+    // mesma decisão já tomada no Azulejo).
+    const isMobileViewport = window.matchMedia('(max-width: 768px)').matches;
+    // qual categoria está aberta AGORA no mobile — precisa sobreviver a um
+    // buildSidebar() (rebuild completo a cada ajuste), senão mexer em
+    // qualquer coisa fechava o painel sozinho.
+    let mobileActiveCategoryId = null;
 
     const root = document.createElement('div');
     root.className = 'mo-layout';
 
     const sidebar = document.createElement('div');
-    sidebar.className = 'mo-controls';
+    // .vt-controls (além de .mo-controls) só entra em ação dentro do
+    // media query mobile (ver style.css) — vira o "bottom sheet" fixo com
+    // aba de categorias; no desktop não muda nada (.mo-controls sozinho já
+    // dá conta).
+    sidebar.className = 'mo-controls vt-controls';
 
     const stage = document.createElement('div');
     stage.className = 'mo-stage';
@@ -314,7 +328,7 @@ export const videoTilesModule = {
       sourceRow.appendChild(uploadButton.el);
       sourceRow.appendChild(webcamButton.el);
       cameraSelectSlot = document.createElement('div');
-      sidebar.appendChild(createSection(t('videoSourceSection'), [sourceRow, cameraSelectSlot, uploadInput, errorMsg]));
+      sidebar.appendChild(createSection(t('videoSourceSection'), [sourceRow, cameraSelectSlot, uploadInput, errorMsg], { id: 'source' }));
       // reconstrói o seletor de câmeras a cada rebuild da sidebar também
       // (troca de idioma, etc.) — sem isso ele sumiria (a sidebar inteira é
       // reconstruída do zero) mesmo com a webcam continuando ativa por trás.
@@ -335,7 +349,7 @@ export const videoTilesModule = {
           applyOptionsAndMaybePalette();
         },
       });
-      sidebar.appendChild(createSection(t('formatSectionTitle'), [framePicker.el]));
+      sidebar.appendChild(createSection(t('formatSectionTitle'), [framePicker.el], { id: 'format' }));
 
       const gridElements = [
         createSlider({
@@ -378,7 +392,7 @@ export const videoTilesModule = {
           },
         }).el,
       ];
-      sidebar.appendChild(createSection(t('videoGridSection'), gridElements));
+      sidebar.appendChild(createSection(t('videoGridSection'), gridElements, { id: 'grid' }));
 
       // EXATAMENTE o mesmo seletor de formas do Azulejo (mesmo componente,
       // mesmo catálogo inteiro — incluindo ícones personalizados enviados
@@ -396,7 +410,7 @@ export const videoTilesModule = {
           applyOptionsAndMaybePalette();
         },
       });
-      sidebar.appendChild(createSection(t('shapesSection'), [shapesGrid.el]));
+      sidebar.appendChild(createSection(t('shapesSection'), [shapesGrid.el], { id: 'shapes' }));
 
       const effectsElements = [
         createSlider({
@@ -421,7 +435,7 @@ export const videoTilesModule = {
           },
         }).el,
       ];
-      sidebar.appendChild(createSection(t('videoEffectsSection'), effectsElements));
+      sidebar.appendChild(createSection(t('videoEffectsSection'), effectsElements, { id: 'effects' }));
 
       // "Tema" — mesmo dicionário/lógica do Azulejo (core/themes.js):
       // aplica direto no patternState compartilhado, então troca de tema
@@ -457,7 +471,7 @@ export const videoTilesModule = {
           applyOptionsAndMaybePalette();
         },
       });
-      sidebar.appendChild(createSection(t('themeSectionTitle'), [themeSelect.el]));
+      sidebar.appendChild(createSection(t('themeSectionTitle'), [themeSelect.el], { id: 'theme' }));
 
       const colorElements = [
         createSelect({
@@ -574,7 +588,7 @@ export const videoTilesModule = {
       bgRow.appendChild(bgLabel);
       bgRow.appendChild(bgInput);
       colorElements.push(bgRow);
-      sidebar.appendChild(createSection(t('videoColorSection'), colorElements));
+      sidebar.appendChild(createSection(t('videoColorSection'), colorElements, { id: 'colors' }));
 
       freezeButton = createButton({
         label: engine.isPaused() ? t('videoUnfreezeButton') : t('videoFreezeButton'),
@@ -609,7 +623,66 @@ export const videoTilesModule = {
       actions.appendChild(recordButton.el);
       actions.appendChild(gifButton.el);
       actions.appendChild(frameButton.el);
-      sidebar.appendChild(createSection(t('videoRecordSection'), [actions]));
+      sidebar.appendChild(createSection(t('videoRecordSection'), [actions], { id: 'record' }));
+
+      // --- aba de categorias (só no mobile) --- mesmo mecanismo de
+      // :has() + radio escondido do Azulejo (ver comentário grandão em
+      // grid-icons/index.js) — ícone por seção (ui/categoryIcons.js),
+      // reaproveitando as MESMAS classes CSS (.gi-mobile-category-tabs*),
+      // só que a visibilidade é controlada por .vt-controls (não
+      // .gi-controls), escopado só pro Espelho.
+      if (isMobileViewport) {
+        const categorySections = Array.from(sidebar.querySelectorAll('.control-section[data-section-id]'));
+        if (categorySections.length) {
+          const categoryTabs = document.createElement('div');
+          categoryTabs.className = 'gi-mobile-category-tabs';
+          categorySections.forEach((section) => {
+            const sectionId = section.dataset.sectionId;
+            const title = section.querySelector('.control-section-title')?.textContent ?? sectionId;
+            const inputId = `vt-cat-${sectionId}`;
+
+            const input = document.createElement('input');
+            input.type = 'radio';
+            input.name = 'vt-category-tab';
+            input.id = inputId;
+            input.className = 'gi-mobile-category-tabs-input';
+            input.checked = sectionId === mobileActiveCategoryId;
+
+            const tabLabel = document.createElement('label');
+            tabLabel.htmlFor = inputId;
+            tabLabel.className = 'gi-mobile-category-tabs-label';
+            const iconMarkup = CATEGORY_ICONS[sectionId];
+            tabLabel.innerHTML =
+              (iconMarkup ? `<span class="gi-mobile-category-tabs-icon">${iconMarkup}</span>` : '') +
+              `<span class="gi-mobile-category-tabs-text">${title}</span>`;
+
+            // tocar de novo no ícone já ativo FECHA o painel (mesmo truque
+            // do Azulejo — radio nativo não desmarca sozinho ao clicar de
+            // novo nele).
+            tabLabel.addEventListener('click', (e) => {
+              if (input.checked) {
+                e.preventDefault();
+                input.checked = false;
+                mobileActiveCategoryId = null;
+                categoryTabs.dispatchEvent(new Event('change', { bubbles: true }));
+              } else {
+                mobileActiveCategoryId = sectionId;
+              }
+            });
+
+            categoryTabs.appendChild(input);
+            categoryTabs.appendChild(tabLabel);
+          });
+          sidebar.appendChild(categoryTabs);
+
+          categoryTabs.addEventListener('change', () => {
+            const checkedInput = categoryTabs.querySelector('.gi-mobile-category-tabs-input:checked');
+            mobileActiveCategoryId = checkedInput ? checkedInput.id.replace('vt-cat-', '') : null;
+            if (!checkedInput) return;
+            sidebar.querySelector(`[data-section-id="${mobileActiveCategoryId}"]`)?.scrollTo?.({ top: 0, behavior: 'smooth' });
+          });
+        }
+      }
     }
 
     buildSidebar();

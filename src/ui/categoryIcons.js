@@ -54,4 +54,15 @@ export const CATEGORY_ICONS = {
   ),
   // seta pra baixo entrando numa bandeja — exportar/baixar arquivo.
   export: icon('<path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/>'),
+  // câmera de vídeo (corpo + "bandeirinha" da lente) — fonte do Espelho
+  // (enviar vídeo/ativar câmera).
+  source: icon('<rect x="3" y="6" width="12" height="12" rx="2"/><path d="M15 10l6-3v10l-6-3z"/>'),
+  // 2 brilhos de tamanhos diferentes — efeitos (rastro/caleidoscópio) do
+  // Espelho, mesma família visual do ícone "detail" (Azulejo), só com 2
+  // brilhos em vez de 1 pra diferenciar das outras categorias.
+  effects: icon(
+    '<path d="M12 3l1 3 3 1-3 1-1 3-1-3-3-1 3-1z"/><path d="M19 13.5l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6z"/>'
+  ),
+  // círculo dentro de um quadrado arredondado — botão de gravar clássico.
+  record: icon('<rect x="4" y="4" width="16" height="16" rx="8"/><circle cx="12" cy="12" r="4"/>'),
 };

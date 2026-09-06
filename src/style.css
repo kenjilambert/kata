@@ -2709,6 +2709,33 @@ body {
     min-height: min(260px, 40vh);
   }
 
+  /* Espelho — mesmo "bottom sheet" fixo + aba de categorias do Azulejo
+     (ver .gi-controls acima e .gi-mobile-category-tabs mais abaixo),
+     escopado numa classe própria (a sidebar do Espelho tem .mo-controls E
+     .vt-controls juntas) pra não afetar o Mosaico, que continua só com
+     .mo-controls normal (sem essa classe extra, sem tab bar). */
+  .vt-controls {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    width: 100%;
+    max-height: 70vh;
+    background: rgba(20, 18, 16, 0.78);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: none;
+    border-top: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+    padding: 16px;
+    overflow: hidden;
+    /* sobrescreve o flex/min-height de .mo-controls (regra acima) — o
+       Espelho não reserva mais espaço no fluxo normal, igual o Azulejo. */
+    flex: 0 0 auto;
+    min-height: 0;
+  }
+
   /* trilha de abas Resultado/Variações/Histórico + botão Editar — a regra
      base já deixa isso uma linha horizontal cheia (mesmo visual dos dois
      tamanhos de tela agora); só a POSIÇÃO muda: no desktop fica embaixo do
@@ -2911,6 +2938,22 @@ body {
        um "bottom sheet" fixo com altura máxima (70vh) — é a seção aberta
        em si que precisa rolar dentro desse teto (a barra de categorias,
        último item da coluna, fica sempre visível embaixo dela). */
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  /* mesmo mecanismo acima, só que pro Espelho (.vt-controls em vez de
+     .gi-controls, ids vt-cat-* em vez de gi-cat-* — ver video-tiles/index.js). */
+  .vt-controls:has(#vt-cat-source:checked) [data-section-id='source'],
+  .vt-controls:has(#vt-cat-format:checked) [data-section-id='format'],
+  .vt-controls:has(#vt-cat-grid:checked) [data-section-id='grid'],
+  .vt-controls:has(#vt-cat-shapes:checked) [data-section-id='shapes'],
+  .vt-controls:has(#vt-cat-effects:checked) [data-section-id='effects'],
+  .vt-controls:has(#vt-cat-theme:checked) [data-section-id='theme'],
+  .vt-controls:has(#vt-cat-colors:checked) [data-section-id='colors'],
+  .vt-controls:has(#vt-cat-record:checked) [data-section-id='record'] {
+    display: flex;
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
