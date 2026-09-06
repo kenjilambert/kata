@@ -33,19 +33,26 @@ function frameOptions() {
 // ícones do Azulejo (shapeToggleGrid.js): cada opção mostra o próprio
 // desenho SVG real da forma (não um nome sozinho), fill="currentColor" pra
 // seguir a cor do texto do botão (cinza normal, creme quando .active — ver
-// .shape-toggle no style.css). "Variado" ganha uma prévia própria (2x2 de 4
-// formas diferentes), já que não existe um SHAPES['mixed'] de verdade.
+// .shape-toggle no style.css). "Variado" ganha uma prévia própria — 4
+// pontinhos tipo face de dado, universalmente lido como "aleatório/misto" —
+// já que não existe um SHAPES['mixed'] de verdade pra desenhar. Uma
+// tentativa anterior tentava encaixar 4 formas reais em miniatura (2x2)
+// nessa mesma caixinha de 22px, mas ficava ilegível/confuso nesse tamanho
+// (virava uma manchinha sem forma clara nenhuma).
 const SHAPE_PREVIEW_SIZE = 22;
-const MIXED_PREVIEW_KEYS = ['square', 'disc', 'diamond', 'triangle'];
 function renderShapePreviewSvg(shapeKey) {
   if (shapeKey === 'mixed') {
-    const half = SHAPE_PREVIEW_SIZE / 2;
-    const cells = MIXED_PREVIEW_KEYS.map((key, i) => {
-      const x = (i % 2) * half;
-      const y = Math.floor(i / 2) * half;
-      return `<g transform="translate(${x}, ${y})">${SHAPES[key].draw(half, 'currentColor', 'tl')}</g>`;
-    }).join('');
-    return `<svg viewBox="0 0 ${SHAPE_PREVIEW_SIZE} ${SHAPE_PREVIEW_SIZE}" width="${SHAPE_PREVIEW_SIZE}" height="${SHAPE_PREVIEW_SIZE}">${cells}</svg>`;
+    const s = SHAPE_PREVIEW_SIZE;
+    const r = s * 0.09;
+    const pad = s * 0.24;
+    const dots = [
+      [pad, pad],
+      [s - pad, pad],
+      [pad, s - pad],
+      [s - pad, s - pad],
+    ];
+    const circles = dots.map(([cx, cy]) => `<circle cx="${cx}" cy="${cy}" r="${r}" fill="currentColor" />`).join('');
+    return `<svg viewBox="0 0 ${s} ${s}" width="${s}" height="${s}">${circles}</svg>`;
   }
   const inner = SHAPES[shapeKey].draw(SHAPE_PREVIEW_SIZE, 'currentColor', 'tl');
   return `<svg viewBox="0 0 ${SHAPE_PREVIEW_SIZE} ${SHAPE_PREVIEW_SIZE}" width="${SHAPE_PREVIEW_SIZE}" height="${SHAPE_PREVIEW_SIZE}">${inner}</svg>`;

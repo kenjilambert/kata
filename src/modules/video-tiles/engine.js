@@ -301,9 +301,14 @@ export function createVideoTilesEngine(outputCanvas) {
         const b8 = data[i + 2];
         const luminance = (0.299 * r8 + 0.587 * g8 + 0.114 * b8) / 255;
 
-        // meio-tom clássico: célula ESCURA = forma GRANDE (mais "tinta"),
-        // célula clara = forma pequena/nenhuma. invert troca essa lógica.
-        const base = options.invert ? luminance : 1 - luminance;
+        // padrão: célula CLARA = forma grande/visível, célula escura = forma
+        // pequena/nenhuma (mostra o que tem luz, some o fundo escuro — o
+        // jeito que faz sentido pra webcam/vídeo normal, onde o fundo do
+        // canvas já é escuro por padrão; sem isso, filmar um ambiente bem
+        // iluminado apagava quase toda célula e o resultado virava um
+        // retângulo preto gigante). invert troca pro meio-tom clássico
+        // (tinta no escuro, como impressão em papel branco).
+        const base = options.invert ? 1 - luminance : luminance;
         const scale = base * options.shapeScale;
 
         let color;
