@@ -1145,11 +1145,75 @@ body {
   background: var(--panel);
 }
 
+/* slider customizado (era só accent-color no input nativo) — o nativo do
+   Chrome desenha uma bolinha branca com um contorno/halo por cima da cor
+   de destaque, nunca fica "limpo" na paleta do site. Trilho fino com o
+   trecho preenchido em --accent-2 (a mesma cor de destaque secundária
+   usada em outros controles) até --fill-percent (setado via JS em
+   createSlider — ui/controls/slider.js), bolinha sólida clara (--text,
+   o creme do site) sem nenhum contorno branco. */
 .control-slider input[type="range"] {
   flex: 1;
-  accent-color: var(--accent-2);
+  -webkit-appearance: none;
+  appearance: none;
   height: 20px;
+  background: transparent;
   cursor: pointer;
+}
+
+.control-slider input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(
+    to right,
+    var(--accent-2) var(--fill-percent, 0%),
+    var(--track-off) var(--fill-percent, 0%)
+  );
+}
+
+.control-slider input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--track-off);
+}
+
+.control-slider input[type="range"]::-moz-range-progress {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-2);
+}
+
+.control-slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border: none;
+  border-radius: 50%;
+  background: var(--text);
+  cursor: pointer;
+  transition: transform 0.15s var(--ease-expressive);
+}
+
+.control-slider input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: var(--text);
+  cursor: pointer;
+  transition: transform 0.15s var(--ease-expressive);
+}
+
+.control-slider input[type="range"]:hover::-webkit-slider-thumb,
+.control-slider input[type="range"]:focus-visible::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+
+.control-slider input[type="range"]:hover::-moz-range-thumb,
+.control-slider input[type="range"]:focus-visible::-moz-range-thumb {
+  transform: scale(1.15);
 }
 
 .control-toggle-switch {
@@ -1806,9 +1870,49 @@ body {
   gap: 10px;
 }
 
+/* mesmo tratamento do slider padrão (sem contorno branco nativo, bolinha
+   clara) — só sem o preenchimento progressivo (--fill-percent), que é
+   específico do componente createSlider; esse aqui é um input solto. */
 .draw-brush-row input[type="range"] {
   flex: 1;
-  accent-color: var(--accent-2);
+  -webkit-appearance: none;
+  appearance: none;
+  height: 20px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.draw-brush-row input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--track-off);
+}
+
+.draw-brush-row input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--track-off);
+}
+
+.draw-brush-row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border: none;
+  border-radius: 50%;
+  background: var(--text);
+  cursor: pointer;
+}
+
+.draw-brush-row input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: var(--text);
+  cursor: pointer;
 }
 
 .draw-actions {

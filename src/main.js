@@ -9,8 +9,15 @@ initCustomCursor();
 
 const logoEl = document.getElementById('app-logo');
 const langSwitcherEl = document.getElementById('lang-switcher');
+const faviconEl = document.getElementById('favicon');
 
-logoEl.innerHTML = renderDynamicLogo();
+// mesmo SVG do logo do header vira o favicon — mesma composição gerada
+// (2x2, seed nova a cada carregamento), só reaproveitada como imagem da
+// aba também. SVG cru como data URI: navegador moderno já lê favicon em
+// SVG direto, sem precisar converter pra PNG/canvas.
+const logoSvg = renderDynamicLogo();
+logoEl.innerHTML = logoSvg;
+if (faviconEl) faviconEl.href = `data:image/svg+xml,${encodeURIComponent(logoSvg)}`;
 document.title = 'Kata';
 
 function renderLangSwitcher() {
