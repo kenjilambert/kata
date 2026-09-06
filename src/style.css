@@ -344,7 +344,11 @@ body {
 }
 
 .module-tab-disabled {
-  color: var(--text-faint);
+  /* vermelho da marca (--accent) em vez do cinza apagado de sempre — mas
+     com opacidade reduzida, pra não parecer clicável/ativa igual as abas
+     de verdade (que são o mesmo vermelho só que em pílula sólida). */
+  color: var(--accent);
+  opacity: 0.65;
   cursor: not-allowed;
 }
 
