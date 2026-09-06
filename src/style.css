@@ -2210,9 +2210,10 @@ body {
     z-index: 40;
     width: 100%;
     max-height: 70vh;
-    background: rgba(20, 18, 16, 0.88);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
+    /* +10% mais transparente/blur que a primeira versão (era 0.88/14px). */
+    background: rgba(20, 18, 16, 0.78);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
     border: none;
     border-top: 1px solid var(--border);
     border-radius: 16px 16px 0 0;

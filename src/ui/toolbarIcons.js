@@ -17,11 +17,9 @@ export const TOOLBAR_ICONS = {
   variations: icon('<rect x="7" y="7" width="12" height="12" rx="1.5"/><path d="M5 15V6a1 1 0 0 1 1-1h9"/>'),
   // estrela de 5 pontas — "sorte".
   lucky: icon('<path d="M12 3l2.2 5.6 6 .5-4.5 4 1.3 5.9L12 15.9 6.9 19l1.3-5.9-4.5-4 6-.5z"/>'),
-  // coração — "novo azulejo" (começar peça do zero, de novo).
-  heart: icon(
-    '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>'
+  // seta pra cima saindo de uma bandeja — "exportar" (ícone clássico de
+  // share/export, ex.: iOS). 4º ícone da trilha do preview, só no mobile.
+  export: icon(
+    '<path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/>'
   ),
-  // 2 quadrados empilhados (um em cima do outro) — "criar variações" (mais
-  // de uma opção, uma embaixo da outra).
-  stacked: icon('<rect x="6" y="4" width="12" height="7" rx="1.5"/><rect x="6" y="13" width="12" height="7" rx="1.5"/>'),
 };

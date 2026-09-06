@@ -177,6 +177,11 @@ export const gridIconsModule = {
     // volta pro Formato) sozinho no meio do uso, cada vez que você mexia
     // em qualquer coisa.
     let mobileActiveCategoryId = null;
+    // input (radio) escondido que controla o painel de Exportar no
+    // mobile — vive fora da barra de categorias visível (é uma AÇÃO, tem
+    // seu próprio ícone na trilha do preview, ver toggleMobileExportPanel),
+    // mas reaproveita o mesmo :has() em style.css pra aparecer/sumir.
+    let mobileExportInputEl = null;
 
     function handleDocumentClickForThemeDropdown(e) {
       if (!themeDropdownOpen) return;
@@ -568,15 +573,37 @@ export const gridIconsModule = {
       randomizeAll();
     }
 
+    // abre/fecha o painel de exportar no mobile — mesmo mecanismo de
+    // radio+:has() das outras categorias (ver buildSidebar, perto de
+    // mobileExportInputEl), só que o gatilho é o 4º ícone da trilha do
+    // preview, não um ícone na barra de categorias (exportar é uma AÇÃO,
+    // não um ajuste — não faz sentido misturado com Tema/Grade/Cores).
+    function toggleMobileExportPanel() {
+      if (!mobileExportInputEl) return;
+      const opening = !mobileExportInputEl.checked;
+      mobileExportInputEl.checked = opening;
+      mobileActiveCategoryId = opening ? 'export' : null;
+      if (opening) {
+        mobileExportInputEl
+          .closest('.gi-controls')
+          ?.querySelector('[data-section-id="export"]')
+          ?.scrollTo?.({ top: 0, behavior: 'smooth' });
+      }
+    }
+
     const regenerateButton = createButton({
       label: t('regenerateButton'),
       variant: 'primary',
-      icon: TOOLBAR_ICONS.heart,
+      // mesmos ícones do trio de ícones do mobile (seta circular/quadrados
+      // sobrepostos/estrela) — não o coração/quadrados empilhados que
+      // usei antes; o pedido era pra igualar no sentido contrário (o
+      // desktop seguir o que o mobile já usava, não o oposto).
+      icon: TOOLBAR_ICONS.regenerate,
       onClick: handleRegenerate,
     });
     const variationsButton = createButton({
       label: t('variationsButton'),
-      icon: TOOLBAR_ICONS.stacked,
+      icon: TOOLBAR_ICONS.variations,
       onClick: handleShowVariations,
     });
     const luckyButton = createButton({ label: t('luckyButton'), icon: TOOLBAR_ICONS.lucky, onClick: handleLucky });
@@ -604,26 +631,34 @@ export const gridIconsModule = {
 
     const toolbarRail = document.createElement('div');
     toolbarRail.className = 'gi-stage-toolbar-rail';
-    // mesmos ícones da pílula com texto do desktop (coração/quadrados
-    // empilhados/estrela) — antes essa trilha usava um jogo de ícones
-    // diferente (seta circular, quadrados sobrepostos), então a mesma
-    // ação parecia "outra coisa" só por trocar de tamanho de tela.
+    // mesmos ícones que a pílula com texto do desktop agora usa também
+    // (seta circular/quadrados sobrepostos/estrela) — os dois tamanhos de
+    // tela usam o mesmo jogo de ícones pra mesma ação.
     const regenerateRailButton = createToolbarRailButton(
-      TOOLBAR_ICONS.heart,
+      TOOLBAR_ICONS.regenerate,
       t('regenerateButton'),
       'primary',
       handleRegenerate
     );
     const variationsRailButton = createToolbarRailButton(
-      TOOLBAR_ICONS.stacked,
+      TOOLBAR_ICONS.variations,
       t('variationsButton'),
       'default',
       handleShowVariations
     );
     const luckyRailButton = createToolbarRailButton(TOOLBAR_ICONS.lucky, t('luckyButton'), 'default', handleLucky);
+    // 4º ícone, só existe no mobile (ver toggleMobileExportPanel acima) —
+    // exportar. No desktop os botões de exportar continuam soltos no fim
+    // da sidebar, do jeito de sempre; aqui viram um atalho igual aos
+    // outros 3, ao lado deles, que abre o mesmo painel de exportar como
+    // um "bottom sheet" por cima do preview.
+    const exportRailButton = createToolbarRailButton(TOOLBAR_ICONS.export, t('exportSectionTitle'), 'default', () =>
+      toggleMobileExportPanel()
+    );
     toolbarRail.appendChild(regenerateRailButton);
     toolbarRail.appendChild(variationsRailButton);
     toolbarRail.appendChild(luckyRailButton);
+    toolbarRail.appendChild(exportRailButton);
 
     // aba "Resultado / Variações / Histórico" — no desktop vira uma trilha
     // vertical à direita do preview; no mobile, uma barra de pílulas em
@@ -2833,7 +2868,22 @@ export const gridIconsModule = {
         const formatSection = createSection(t('exportFrameLabel'), [formatPicker.el], sectionOptions('format'));
         sidebar.insertBefore(formatSection, sidebar.firstChild);
 
-        const categorySections = Array.from(sidebar.querySelectorAll('.control-section[data-section-id]'));
+        const allCategorySections = Array.from(sidebar.querySelectorAll('.control-section[data-section-id]'));
+        // "Exportar" sai da barra de categorias — vira o 4º ícone da
+        // trilha do preview (ver toolbarRail/exportRailButton), não mais
+        // misturado com Tema/Grade/Cores etc. (é uma ação, não um ajuste).
+        const exportSection = allCategorySections.find((s) => s.dataset.sectionId === 'export');
+        const categorySections = allCategorySections.filter((s) => s.dataset.sectionId !== 'export');
+        if (exportSection) {
+          const exportInput = document.createElement('input');
+          exportInput.type = 'radio';
+          exportInput.name = 'gi-category-tab';
+          exportInput.id = 'gi-cat-export';
+          exportInput.className = 'gi-mobile-category-tabs-input';
+          exportInput.checked = mobileActiveCategoryId === 'export';
+          sidebar.insertBefore(exportInput, exportSection);
+          mobileExportInputEl = exportInput;
+        }
         if (categorySections.length) {
           const categoryTabs = document.createElement('div');
           categoryTabs.className = 'gi-mobile-category-tabs';
@@ -2885,9 +2935,10 @@ export const gridIconsModule = {
             categoryTabs.appendChild(input);
             categoryTabs.appendChild(tabLabel);
           });
-          // vai pro fim da sidebar (depois de todas as categorias,
-          // incluindo a de "Exportar" — ver acima) — não referencia mais
-          // a antiga div "actions" (só existe no desktop agora).
+          // vai pro fim da sidebar (depois de todas as categorias de
+          // ajuste — "Exportar" não é mais uma delas, ver exportSection
+          // acima) — não referencia mais a antiga div "actions" (só existe
+          // no desktop agora).
           sidebar.appendChild(categoryTabs);
           mobileCategoryTabsEl = categoryTabs;
 
