@@ -1955,6 +1955,13 @@ export const gridIconsModule = {
           openPanel.style.left = `${triggerRect.left}px`;
           openPanel.style.right = 'auto';
           openPanel.style.width = `${triggerRect.width}px`;
+          // abre já mostrando o tema marcado, não sempre do topo da
+          // lista (seria "Limpo") — sem isso, um tema lá pelo meio/fim
+          // da lista (a maioria) só aparecia depois de rolar a esmo.
+          // "instant" (não smooth) — o painel acabou de aparecer nesse
+          // exato frame, uma rolagem animada por cima da entrada dele já
+          // ia parecer estranho/duplicado.
+          openPanel.querySelector('.theme-combo-row.active')?.scrollIntoView({ block: 'center', behavior: 'instant' });
         }
       }
 

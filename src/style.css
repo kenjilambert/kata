@@ -105,11 +105,21 @@
 }
 
 /* tira as setinhas de cima/baixo dos cantos da barra de rolagem (Chrome
-   no Windows costuma desenhar por padrão) — só a barra em si, sem elas. */
-*::-webkit-scrollbar-button {
-  display: none;
-  width: 0;
-  height: 0;
+   no Windows costuma desenhar por padrão) — só a barra em si, sem elas.
+   Os seletores :start/:end/:increment/:decrement são mais específicos
+   que ::-webkit-scrollbar-button sozinho e o navegador aplica um estilo
+   próprio neles por padrão — sem repetir display:none em cada um, essa
+   regra geral sozinha não bastava pra apagar as setinhas em todo canto. */
+*::-webkit-scrollbar-button,
+*::-webkit-scrollbar-button:start,
+*::-webkit-scrollbar-button:end,
+*::-webkit-scrollbar-button:vertical:start:decrement,
+*::-webkit-scrollbar-button:vertical:end:increment,
+*::-webkit-scrollbar-button:horizontal:start:decrement,
+*::-webkit-scrollbar-button:horizontal:end:increment {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
 button,
@@ -1181,8 +1191,6 @@ body {
   display: flex;
   align-items: center;
   height: 20px;
-  padding: 0 8px;
-  margin: 0 -8px;
   cursor: pointer;
   touch-action: none;
   -webkit-user-select: none;
@@ -1197,7 +1205,15 @@ body {
 
 .slider-track-inner {
   position: relative;
-  width: 100%;
+  /* recuada 8px de cada lado (não a técnica antiga de padding+margin
+     negativa no wrap, que "vazava" pra fora do próprio container e
+     cortava — ficava dependendo de sobrar espaço/gutter no pai, que nem
+     sempre tinha) — a bolinha (8px de raio) nunca ultrapassa a borda do
+     PRÓPRIO wrap agora, então nenhum ancestral com overflow:hidden (ex.:
+     .control-section-body-inner, usado pro colapso animado das seções)
+     tem o que cortar. */
+  width: calc(100% - 16px);
+  margin: 0 8px;
 }
 
 .slider-track {
