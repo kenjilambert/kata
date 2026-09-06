@@ -1961,7 +1961,12 @@ export const gridIconsModule = {
           // "instant" (não smooth) — o painel acabou de aparecer nesse
           // exato frame, uma rolagem animada por cima da entrada dele já
           // ia parecer estranho/duplicado.
-          openPanel.querySelector('.theme-combo-row.active')?.scrollIntoView({ block: 'center', behavior: 'instant' });
+          // "auto" (não "instant" — nem todo navegador aceita esse valor
+          // pro scrollIntoView, e se recusar o objeto inteiro o comando
+          // pode ser ignorado por completo) já pula direto sem animação
+          // (só anima se algum ancestral tiver scroll-behavior:smooth,
+          // que não é o caso aqui).
+          openPanel.querySelector('.theme-combo-row.active')?.scrollIntoView({ block: 'center', behavior: 'auto' });
         }
       }
 
