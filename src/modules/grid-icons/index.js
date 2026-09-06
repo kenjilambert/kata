@@ -163,6 +163,20 @@ export const gridIconsModule = {
     // própria gerada por generateFramedIcon (ver updatePreviewFrame). É o
     // que os botões de exportar (SVG/PNG) usam de verdade.
     let currentFramedIconSvg = '';
+    // barra de categorias do mobile (Tema/Grade/Detalhe/...) — só existe
+    // depois de buildSidebar() rodar; guardada aqui pra computePreviewBoxSize
+    // medir a altura real dela (o "bottom sheet" fixo reserva só esse
+    // tanto de espaço pro preview, não o painel de ajustes inteiro).
+    let mobileCategoryTabsEl = null;
+    // qual categoria (id da seção) está aberta no "bottom sheet" mobile —
+    // null = nenhuma (painel fechado). buildSidebar() roda de novo a
+    // QUALQUER mudança de estado (mover um slider, trocar uma cor...), e
+    // sem guardar isso aqui fora, cada rebuild recriava os inputs do zero
+    // e voltava tudo pra "nenhuma marcada" (ou, antes, sempre pra
+    // "Formato", a primeira) — na prática, o painel fechava (ou pulava de
+    // volta pro Formato) sozinho no meio do uso, cada vez que você mexia
+    // em qualquer coisa.
+    let mobileActiveCategoryId = null;
 
     function handleDocumentClickForThemeDropdown(e) {
       if (!themeDropdownOpen) return;
@@ -590,14 +604,18 @@ export const gridIconsModule = {
 
     const toolbarRail = document.createElement('div');
     toolbarRail.className = 'gi-stage-toolbar-rail';
+    // mesmos ícones da pílula com texto do desktop (coração/quadrados
+    // empilhados/estrela) — antes essa trilha usava um jogo de ícones
+    // diferente (seta circular, quadrados sobrepostos), então a mesma
+    // ação parecia "outra coisa" só por trocar de tamanho de tela.
     const regenerateRailButton = createToolbarRailButton(
-      TOOLBAR_ICONS.regenerate,
+      TOOLBAR_ICONS.heart,
       t('regenerateButton'),
       'primary',
       handleRegenerate
     );
     const variationsRailButton = createToolbarRailButton(
-      TOOLBAR_ICONS.variations,
+      TOOLBAR_ICONS.stacked,
       t('variationsButton'),
       'default',
       handleShowVariations
@@ -1221,7 +1239,13 @@ export const gridIconsModule = {
       // ficava parcialmente (ou totalmente) fora da tela, sem como rolar
       // até ele (body é overflow:hidden). No desktop a sidebar é uma
       // coluna ao LADO do stage inteiro (não compete por altura).
-      const controlsMinHeight = isMobileViewport ? 310 : 0;
+      // O painel de ajustes virou um "bottom sheet" (position:fixed, ver
+      // .gi-controls no mobile) que flutua POR CIMA do preview quando
+      // aberto, em vez de empurrá-lo — só reserva a altura da barra de
+      // categorias sempre visível (fechada), não o painel inteiro; isso
+      // já é reservado sozinho por causa do overlay, não precisa de mais
+      // altura reservada aqui.
+      const controlsMinHeight = isMobileViewport ? (mobileCategoryTabsEl?.offsetHeight ?? 90) + 12 : 0;
       const maxH = Math.max(160, window.innerHeight - top - belowReserved - controlsMinHeight);
       let w = maxW;
       let h = w / ratio;
@@ -2813,7 +2837,7 @@ export const gridIconsModule = {
         if (categorySections.length) {
           const categoryTabs = document.createElement('div');
           categoryTabs.className = 'gi-mobile-category-tabs';
-          categorySections.forEach((section, index) => {
+          categorySections.forEach((section) => {
             const sectionId = section.dataset.sectionId;
             const title = section.querySelector('.control-section-title')?.textContent ?? sectionId;
             const inputId = `gi-cat-${sectionId}`;
@@ -2823,7 +2847,14 @@ export const gridIconsModule = {
             input.name = 'gi-category-tab';
             input.id = inputId;
             input.className = 'gi-mobile-category-tabs-input';
-            input.checked = index === 0;
+            // reflete o que estava aberto ANTES desse rebuild (buildSidebar
+            // roda de novo a cada mudança de estado — ver comentário em
+            // mobileActiveCategoryId) — sem isso, mexer em qualquer ajuste
+            // fechava o painel (ou pulava pra "Formato") sozinho. Sem
+            // categoria nenhuma guardada (primeira montagem), começa
+            // fechado: o "bottom sheet" só aparece depois de tocar num
+            // ícone, não já ocupando a tela de cara.
+            input.checked = sectionId === mobileActiveCategoryId;
 
             const tabLabel = document.createElement('label');
             tabLabel.htmlFor = inputId;
@@ -2836,6 +2867,21 @@ export const gridIconsModule = {
               (iconMarkup ? `<span class="gi-mobile-category-tabs-icon">${iconMarkup}</span>` : '') +
               `<span class="gi-mobile-category-tabs-text">${title}</span>`;
 
+            // tocar de novo no ícone já ativo FECHA o painel (radio nativo
+            // não desmarca sozinho ao clicar de novo) — sem isso, uma vez
+            // aberta, a única forma de "ver mais preview" de novo era
+            // escolher outra categoria, nunca voltar a não ter nenhuma.
+            tabLabel.addEventListener('click', (e) => {
+              if (input.checked) {
+                e.preventDefault();
+                input.checked = false;
+                mobileActiveCategoryId = null;
+                categoryTabs.dispatchEvent(new Event('change', { bubbles: true }));
+              } else {
+                mobileActiveCategoryId = sectionId;
+              }
+            });
+
             categoryTabs.appendChild(input);
             categoryTabs.appendChild(tabLabel);
           });
@@ -2843,15 +2889,22 @@ export const gridIconsModule = {
           // incluindo a de "Exportar" — ver acima) — não referencia mais
           // a antiga div "actions" (só existe no desktop agora).
           sidebar.appendChild(categoryTabs);
+          mobileCategoryTabsEl = categoryTabs;
 
-          // trocar de categoria enquanto a sidebar já está rolada pra
-          // baixo (dentro de uma seção grande, tipo Cores) deixava o
-          // painel novo aberto FORA da tela, lá em cima — parecia que
-          // "não tinha nada" na aba escolhida até rolar manualmente pra
-          // ver. Ao trocar, rola suave de volta pro topo (onde toda seção
-          // começa) — o painel some/aparece já visível, sem esforço.
+          // trocar de categoria com a seção anterior já rolada pra baixo
+          // (dentro de uma seção grande, tipo Cores) deixava a próxima
+          // aberta "no meio", sem mostrar o topo dela. Quem rola agora é a
+          // própria seção (ver overflow-y no .control-section[data-
+          // section-id] mobile), não mais a sidebar inteira (que virou um
+          // "bottom sheet" fixo, não rola como painel único).
           categoryTabs.addEventListener('change', () => {
-            sidebar.scrollTo({ top: 0, behavior: 'smooth' });
+            const checkedInput = categoryTabs.querySelector('.gi-mobile-category-tabs-input:checked');
+            // fonte da verdade final de qual categoria está aberta — cobre
+            // troca por teclado/setas entre os radios (não passa pelo
+            // clique no <label>, que já seta isso na hora, ver acima).
+            mobileActiveCategoryId = checkedInput ? checkedInput.id.replace('gi-cat-', '') : null;
+            if (!checkedInput) return;
+            sidebar.querySelector(`[data-section-id="${mobileActiveCategoryId}"]`)?.scrollTo?.({ top: 0, behavior: 'smooth' });
           });
         }
       }

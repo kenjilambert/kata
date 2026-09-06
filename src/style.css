@@ -2192,27 +2192,57 @@ body {
     width: 100%;
   }
 
+  /* painel de ajustes do Azulejo virou um "bottom sheet" flutuante, estilo
+     Lightroom mobile: fixo na parte de baixo da TELA (não mais no fluxo
+     normal, empurrando o preview pra cima) — só a barra de categorias
+     fica sempre visível (o painel some inteiro quando nenhuma categoria
+     está marcada, já que cada seção some via display:none e não sobra
+     mais nada além da barra). Isso libera a tela quase inteira pro
+     preview em vez de sempre reservar um pedaço fixo de altura pro
+     painel, mesmo fechado. Fundo semitransparente + blur — dá pra ver um
+     pouco do preview por trás quando o painel abre, em vez de tapar tudo
+     com uma cor opaca. */
   .gi-controls {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    width: 100%;
+    max-height: 70vh;
+    background: rgba(20, 18, 16, 0.88);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: none;
+    border-top: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
     /* menos padding que no desktop — libera espaço vertical extra numa
        tela de celular mais baixa (ver comentário em .gi-stage acima). */
     padding: 16px;
+    overflow: hidden;
   }
 
-  .gi-sidebar-column,
+  .gi-sidebar-column {
+    width: 100%;
+    max-width: none;
+    /* .gi-controls saiu do fluxo normal (position:fixed acima) — essa
+       coluna não precisa mais reservar altura nenhuma pra ele. */
+    flex: 0 0 auto;
+    min-height: 0;
+  }
+
   .mo-controls {
     width: 100%;
     max-width: none;
     /* ocupa todo o resto da altura disponível — sempre visível junto com
        o preview, nunca escondido atrás de uma aba (quem rola por dentro é
-       o .gi-controls aninhado — ver regra dele, sem media query nenhuma,
-       já vale nos dois tamanhos de tela). */
+       o painel em si). */
     flex: 1 1 auto;
     /* nunca menor que isso, nem numa tela curta — sem esse piso, flex:1 1
-       auto encolhia esse painel (e o menu de categorias sticky dentro
-       dele) até sobrar menos altura do que ele precisa pra existir, e
-       como flex-shrink não gera overflow, não tinha nem como rolar até
-       ele (ver overflow-y no .gi-layout/.mo-layout acima). min() com vh
-       em vez de um número fixo: numa tela realmente curta (celular
+       auto encolhia esse painel até sobrar menos altura do que ele precisa
+       pra existir, e como flex-shrink não gera overflow, não tinha nem
+       como rolar até ele (ver overflow-y no .mo-layout acima). min() com
+       vh em vez de um número fixo: numa tela realmente curta (celular
        deitado, por ex.) o piso encolhe proporcionalmente em vez de forçar
        overflow/scroll sempre que 260px não caberia de jeito nenhum. */
     min-height: min(260px, 40vh);
@@ -2235,18 +2265,17 @@ body {
   /* aba de categorias da sidebar (Tema/Grade/Detalhe/Cores/...) — estilo
      Lightroom mobile de verdade: ícone em cima, nome embaixo (não só
      texto — bem mais fácil de reconhecer de relance rolando a barra
-     horizontal), fixa embaixo do painel de ajustes (position:sticky) —
-     não importa quanto o conteúdo da categoria aberta role, a barra de
-     categorias continua sempre visível e alcançável com o polegar, do
-     jeito que apps de edição de foto resolvem isso. Ver grid-icons/
+     horizontal). Antes era sticky pra ficar visível dentro do painel que
+     rolava; agora .gi-controls inteiro é fixo (ver regra dela acima) e é a
+     SEÇÃO aberta que rola (ver overflow-y no .control-section[data-
+     section-id] mais abaixo) — essa barra já fica sempre visível por ser
+     o último item da coluna, sem precisar de sticky. Ver grid-icons/
      index.js (monta o markup, ui/categoryIcons.js os ícones) e
      ui/controls/section.js (data-section-id em cada .control-section). */
   .gi-mobile-category-tabs {
-    position: sticky;
     /* os -16px (bottom/margin) batem com o padding de .gi-controls no
        mobile (16px, ver regra dela acima) — sem isso alinhado, a barra
        ficava com uma folga (ou cortava) embaixo em vez de grudar rente. */
-    bottom: -16px;
     margin: 12px -16px -16px;
     display: flex;
     flex-shrink: 0;
@@ -2416,8 +2445,14 @@ body {
     /* o painel "sobe" de leve ao trocar de categoria (em vez de só
        aparecer estático) — dá o mesmo tipo de resposta de um bottom sheet
        abrindo, junto do scroll-pro-topo em JS (ver index.js) que já
-       garante que o painel esteja de fato visível na tela ao trocar. */
-    animation: gi-section-enter 0.32s var(--ease-expressive);
+       garante que o painel esteja de fato visível na tela ao trocar.
+       flex:1 1 auto + min-height:0 + overflow-y:auto: .gi-controls agora é
+       um "bottom sheet" fixo com altura máxima (70vh) — é a seção aberta
+       em si que precisa rolar dentro desse teto (a barra de categorias,
+       último item da coluna, fica sempre visível embaixo dela). */
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
   }
 }
 
