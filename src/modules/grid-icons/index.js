@@ -1195,7 +1195,11 @@ export const gridIconsModule = {
       // no mobile ela ficava ao lado (tomando espaço da própria arte),
       // agora fica embaixo (ver appendChild em index.js); no desktop os
       // mesmos 3 botões (pílula com texto) viraram uma linha própria ACIMA.
-      const maxW = Math.max(160, Math.min(540, (stage.clientWidth || 540) - stagePadX));
+      // SEM teto fixo de 540px — numa janela larga a moldura (.gi-stage)
+      // fica bem maior que isso, e o preview precisa crescer proporcional
+      // até o limite real (largura do stage, ou altura da tela via maxH
+      // logo abaixo), não sobrar pequeno com um vão vazio gigante em volta.
+      const maxW = Math.max(160, (stage.clientWidth || 540) - stagePadX);
 
       const top = previewWrap.getBoundingClientRect().top || 0;
       // abaixo do preview fica a pílula de ação — no desktop a pílula com

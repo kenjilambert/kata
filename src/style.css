@@ -833,10 +833,12 @@ body {
 
 .gi-gallery {
   width: 100%;
-  /* mesma largura do preview/toolbar (ver .gi-preview-wrap) — sem isso a
-     galeria esticava pra largura inteira do stage e os cartões/cabeçalhos
-     ficavam alinhados à esquerda longe do preview, que fica centralizado. */
-  max-width: 540px;
+  /* mesma largura do preview/toolbar (ver --gi-preview-w, setada via JS em
+     updatePreviewFrame) — sem isso a galeria esticava pra largura inteira
+     do stage (ou ficava presa num teto fixo de 540px, menor que um
+     preview que cresceu além disso numa janela larga) e os cartões/
+     cabeçalhos ficavam desalinhados do preview, que fica centralizado. */
+  max-width: var(--gi-preview-w, 540px);
   /* única parte do .gi-stage que rola — preenche o espaço que sobra
      abaixo do preview/botões (flex:1) e nunca deixa o .gi-stage inteiro
      rolar (min-height:0 é o que permite ela encolher e ativar o próprio
@@ -2144,7 +2146,13 @@ body {
        ajustes embaixo (ver min-height em .gi-sidebar-column/.mo-controls
        e controlsMinHeight em computePreviewBoxSize, grid-icons/index.js). */
     flex: 0 0 auto;
-    overflow: visible;
+    /* era "visible" — sobrou de quando essa moldura (painel/borda) não
+       existia ainda e não tinha o que "vazar" pra fora dela; agora com a
+       moldura de verdade (ver regra base .gi-stage), overflow:visible
+       deixava conteúdo mais alto que o esperado (ex.: a galeria de
+       Histórico com muita miniatura) escapar visualmente pra fora do
+       cantinho arredondado em vez de ficar contido/rolável lá dentro. */
+    overflow: hidden;
     /* era "12px 0" (sem padding lateral nenhum) — sobrou de quando essa
        moldura não existia ainda; com o painel/borda de verdade (ver regra
        base .gi-stage acima), isso encostava a trilha de abas e o preview
