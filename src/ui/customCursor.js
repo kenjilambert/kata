@@ -12,9 +12,14 @@ export function initCustomCursor() {
 
   const cursor = document.createElement('div');
   cursor.className = 'custom-cursor';
+  // 2 formas no mesmo SVG, só uma visível por vez (ver .custom-cursor.
+  // pressed em style.css) — a seta normal vira uma bolinha cheia enquanto
+  // segura o clique (arrastando um slider, por ex.), mesmo hotspot (perto
+  // de 1,1) pras duas, então a troca não "pula" o cursor de lugar.
   cursor.innerHTML = `
     <svg viewBox="0 0 24 24" width="24" height="24">
-      <path class="custom-cursor-shape" d="M1 1 L21 10 L11 12.5 L8.5 21 Z" />
+      <path class="custom-cursor-shape custom-cursor-arrow" d="M1 1 L21 10 L11 12.5 L8.5 21 Z" />
+      <circle class="custom-cursor-shape custom-cursor-dot" cx="7" cy="7" r="7" />
     </svg>
   `;
   document.body.appendChild(cursor);

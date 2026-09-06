@@ -51,11 +51,14 @@ export function createIconSelect({ label, options, value, onChange }) {
     if (isOpen) {
       const panel = document.createElement('div');
       panel.className = 'icon-select-panel';
-      options.forEach((o) => {
+      options.forEach((o, index) => {
         const row = document.createElement('button');
         row.type = 'button';
         row.className = 'icon-select-row';
         row.classList.toggle('active', o.value === currentValue);
+        // cascata rápida ao abrir, mesma mecânica do outro dropdown (ver
+        // .control-select-option-in em style.css).
+        row.style.animationDelay = `${index * 20}ms`;
         row.appendChild(o.renderIcon());
         const rowLabel = document.createElement('span');
         rowLabel.textContent = o.label;
@@ -69,6 +72,20 @@ export function createIconSelect({ label, options, value, onChange }) {
         panel.appendChild(row);
       });
       combo.appendChild(panel);
+      // escapa do corte de overflow:hidden da seção que contém esse
+      // controle (.control-section-body-inner — precisa disso pro
+      // colapso animado das seções funcionar, ver style.css) — sem isso,
+      // um position:absolute comum ficava invisível (existia no DOM, mas
+      // era pintado por baixo do resto da sidebar). Só dá pra medir a
+      // posição real do gatilho DEPOIS dele estar no DOM, por isso aqui,
+      // não antes. Mesma solução do combo de tema e do select
+      // customizado (ver grid-icons/index.js e ui/controls/select.js).
+      const rect = trigger.getBoundingClientRect();
+      panel.style.position = 'fixed';
+      panel.style.top = `${rect.bottom + 4}px`;
+      panel.style.left = `${rect.left}px`;
+      panel.style.right = 'auto';
+      panel.style.width = `${rect.width}px`;
     }
   }
 

@@ -1989,6 +1989,7 @@ export const gridIconsModule = {
 
       const structureUploadButton = createButton({
         label: state.structureImageUrl ? t('changeImage') : t('uploadImage'),
+        variant: 'accent2',
         onClick: () => structureFileInput.click(),
       });
 
@@ -2574,6 +2575,7 @@ export const gridIconsModule = {
 
         const colorUploadButton = createButton({
           label: state.colorImageUrl ? t('changeImage') : t('uploadImage'),
+          variant: 'accent2',
           onClick: () => colorFileInput.click(),
         });
 

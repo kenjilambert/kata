@@ -1150,8 +1150,9 @@ body {
 
 /* --value-proximity (0 no mínimo → 1 no máximo, setado via JS em
    updateValueLabel — ui/controls/slider.js) esquenta o fundo pra
-   vermelho e escurece o número conforme o valor se aproxima do teto —
-   um reforço visual de "quase no máximo" sem precisar olhar o número. */
+   vermelho conforme o valor se aproxima do teto — reforço visual de
+   "quase no máximo" sem precisar ler o número. Número sempre em negrito
+   e branco/creme (nunca preto) — só o fundo muda. */
 .slider-value-box {
   --value-proximity: 0;
   flex-shrink: 0;
@@ -1161,9 +1162,10 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   font-size: 12px;
-  color: color-mix(in srgb, var(--text) calc((1 - var(--value-proximity)) * 100%), #000000);
+  font-weight: 700;
+  color: var(--text);
   background: color-mix(in srgb, var(--panel) calc((1 - var(--value-proximity)) * 100%), var(--accent));
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition: background-color 0.15s ease;
 }
 
 /* slider 100% customizado (era <input type="range"> nativo) — nenhum
@@ -1365,18 +1367,19 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--border);
+  border: 1px solid var(--accent-2);
   border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--text-muted);
+  background: var(--accent-2);
+  color: var(--accent-text);
   font-size: 16px;
+  font-weight: 700;
   cursor: pointer;
   padding: 0;
+  transition: transform 0.15s var(--ease-expressive);
 }
 
 .theme-arrow-button:hover {
-  border-color: var(--accent-2);
-  color: var(--accent-2);
+  transform: scale(1.08);
 }
 
 .theme-combo {
@@ -1955,6 +1958,16 @@ body {
   border-radius: var(--radius-pill);
 }
 
+/* variante azul (--accent-2) — usada nos botões "Enviar imagem", pra
+   destacar essa ação sem usar o vermelho padrão (já reservado pras ações
+   "principais" tipo Exportar/Novo azulejo). */
+.control-button-accent2 {
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+  color: var(--accent-text);
+  font-weight: 700;
+}
+
 /* confirmação visual de exportação — o botão "enche" de branco da
    esquerda pra direita e some (ver flashExportSuccess em
    ui/controls/button.js, chamado depois de Exportar SVG/PNG). */
@@ -1982,10 +1995,20 @@ body {
   content: '';
   position: absolute;
   inset: 0;
+  z-index: 0;
   background: var(--accent-2);
   transform-origin: left center;
   animation: export-fill-sweep 0.6s ease-out;
   pointer-events: none;
+}
+
+/* o texto (e ícone, quando tem) precisam ficar POR CIMA do azul que
+   varre o botão (::after acima) — sem isso, o texto ficava tingido de
+   azul enquanto a animação passava por baixo dele. */
+.control-button-label,
+.control-button-icon {
+  position: relative;
+  z-index: 1;
 }
 
 .draw-overlay {
@@ -2298,8 +2321,13 @@ body {
   overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--panel);
+  /* semitransparente + blur, igual aos outros dropdowns (combo de tema,
+     select customizado). */
+  background: rgba(20, 18, 16, 0.9);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+  animation: gi-section-enter 0.2s var(--ease-expressive);
 }
 
 .icon-select-row {
@@ -2310,12 +2338,15 @@ body {
   padding: 8px 10px;
   border: none;
   border-bottom: 1px solid var(--track-off);
-  background: var(--panel);
+  /* transparente (era --panel sólido) — mesma razão do .theme-combo-row:
+     um fundo opaco por linha escondia o blur/transparência do painel. */
+  background: transparent;
   color: var(--text);
   font-size: 13px;
   font-family: inherit;
   cursor: pointer;
   text-align: left;
+  animation: control-select-option-in 0.15s var(--ease-expressive) both;
 }
 
 .icon-select-row:last-child {
@@ -2794,9 +2825,13 @@ body {
   opacity: 1;
 }
 
+/* creme sólido + mix-blend-mode:difference — em vez de uma cor fixa (que
+   sumia de vista em cima de fundo parecido), a diferença de cores com o
+   que tá embaixo faz o cursor "inverter" o que ele cobre, sempre visível
+   não importa a cor por baixo (mesmo truque de vários portfólios). */
 .custom-cursor-shape {
-  /* só a forma, azul sólido — sem nó/âncora nenhum. */
-  fill: var(--accent-2);
+  fill: var(--text);
+  mix-blend-mode: difference;
   transition: fill 0.1s ease;
 }
 
@@ -2804,10 +2839,29 @@ body {
   transform-origin: 1px 1px;
 }
 
+/* segurando o clique (arrastando um slider, por ex.) — troca de forma
+   (seta vira bolinha cheia) e de cor: sai do "inverte o fundo" pra um
+   vermelho sólido de verdade, confirmação bem mais clara de que o clique
+   registrou do que só o scale(0.85) que já existia. */
+.custom-cursor-arrow {
+  display: block;
+}
+
+.custom-cursor-dot {
+  display: none;
+}
+
+.custom-cursor.pressed .custom-cursor-arrow {
+  display: none;
+}
+
+.custom-cursor.pressed .custom-cursor-dot {
+  display: block;
+}
+
 .custom-cursor.pressed .custom-cursor-shape {
-  /* vermelho no clique — confirmação visual clara de que registrou,
-     além do scale(0.85) que já encolhia de leve. */
   fill: var(--accent);
+  mix-blend-mode: normal;
 }
 
 /* prefers-reduced-motion: em vez de um "* { transition: none !important }"
