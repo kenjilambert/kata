@@ -9,7 +9,6 @@ initCustomCursor();
 
 const logoEl = document.getElementById('app-logo');
 const langSwitcherEl = document.getElementById('lang-switcher');
-const faviconEl = document.getElementById('favicon');
 
 // mesmo SVG do logo do header vira o favicon — mesma composição gerada
 // (2x2, seed nova a cada carregamento), só reaproveitada como imagem da
@@ -17,7 +16,18 @@ const faviconEl = document.getElementById('favicon');
 // SVG direto, sem precisar converter pra PNG/canvas.
 const logoSvg = renderDynamicLogo();
 logoEl.innerHTML = logoSvg;
-if (faviconEl) faviconEl.href = `data:image/svg+xml,${encodeURIComponent(logoSvg)}`;
+
+// troca o <link> inteiro (tira o antigo, bota um novo) em vez de só
+// mudar o href do que já existe — alguns navegadores (esp. Chrome) não
+// refazem o ícone da aba se só o href muda, mas sempre pegam um <link>
+// novo inserido no <head>.
+document.querySelectorAll('link[rel="icon"]').forEach((el) => el.remove());
+const faviconEl = document.createElement('link');
+faviconEl.rel = 'icon';
+faviconEl.type = 'image/svg+xml';
+faviconEl.href = `data:image/svg+xml,${encodeURIComponent(logoSvg)}`;
+document.head.appendChild(faviconEl);
+
 document.title = 'Kata';
 
 function renderLangSwitcher() {

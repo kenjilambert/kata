@@ -1462,14 +1462,117 @@ body {
   font-weight: 600;
 }
 
-.control-select select {
+/* dropdown customizado (ver ui/controls/select.js) — mesmo visual do
+   combo de tema (.theme-combo-*), só genérico. .control-select-combo é o
+   ancestral posicionado (position:relative) que o painel absoluto usa de
+   referência. */
+.control-select-combo {
+  position: relative;
+}
+
+.control-select-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  font-size: 14px;
-  font-family: inherit;
   background: var(--panel);
   color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.control-select-trigger:hover {
+  border-color: var(--accent-2);
+}
+
+/* aberto: o canto de baixo do campo "desarredonda" (fica reto) pra
+   emendar direto no painel logo abaixo — só o topo do painel arredondado
+   ficaria estranho colado num campo ainda com canto de baixo arredondado. */
+.control-select.open .control-select-trigger {
+  border-color: var(--accent-2);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.control-select-trigger-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.control-select-chevron {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  transition: transform 0.15s var(--ease-expressive);
+}
+
+.control-select.open .control-select-chevron {
+  transform: rotate(180deg);
+}
+
+.control-select-panel {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--accent-2);
+  border-top: none;
+  /* só embaixo arredondado — o de cima fica reto, emendado no campo
+     (ver .control-select.open .control-select-trigger acima). */
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  background: var(--panel);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+}
+
+.control-select.open .control-select-panel {
+  display: block;
+}
+
+.control-select-option {
+  width: 100%;
+  display: block;
+  padding: 8px 10px;
+  border: none;
+  border-bottom: 1px solid var(--track-off);
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.control-select-option:last-child {
+  border-bottom: none;
+  /* o painel já corta com overflow:hidden implícito do border-radius,
+     mas sem isso o último item quadrado "vazava" um cantinho reto por
+     baixo do canto arredondado do painel. */
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+}
+
+.control-select-option:hover {
+  background: rgba(241, 238, 192, 0.12);
+}
+
+/* selecionado — mesma cor cheia usada em outros "ativos" do site (aba de
+   formato marcada, categoria marcada), não só o texto colorido. */
+.control-select-option.active {
+  background: var(--accent-2);
+  color: var(--accent-text);
 }
 
 .swatch-row {
@@ -2580,6 +2683,18 @@ body {
   cursor: none !important;
 }
 
+/* input[type=range] é um controle nativo — parte dele (a bolinha/trilho)
+   é desenhada em pseudo-elementos (::-webkit-slider-thumb etc.), que o
+   seletor universal (*) acima NÃO alcança (pseudo-elemento não é
+   elemento) — sem isso especificamente, a mãozinha do sistema aparecia
+   de novo bem em cima da bolinha, mesmo com cursor:none no input em si. */
+.custom-cursor-active input[type="range"]::-webkit-slider-thumb,
+.custom-cursor-active input[type="range"]::-webkit-slider-runnable-track,
+.custom-cursor-active input[type="range"]::-moz-range-thumb,
+.custom-cursor-active input[type="range"]::-moz-range-track {
+  cursor: none !important;
+}
+
 .custom-cursor {
   position: fixed;
   top: 0;
@@ -2598,10 +2713,17 @@ body {
 .custom-cursor-shape {
   /* só a forma, azul sólido — sem nó/âncora nenhum. */
   fill: var(--accent-2);
+  transition: fill 0.1s ease;
 }
 
 .custom-cursor.pressed {
   transform-origin: 1px 1px;
+}
+
+.custom-cursor.pressed .custom-cursor-shape {
+  /* vermelho no clique — confirmação visual clara de que registrou,
+     além do scale(0.85) que já encolhia de leve. */
+  fill: var(--accent);
 }
 
 /* prefers-reduced-motion: em vez de um "* { transition: none !important }"

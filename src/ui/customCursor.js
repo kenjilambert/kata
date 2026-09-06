@@ -53,11 +53,16 @@ export function initCustomCursor() {
 
   function onDown() {
     pressed = true;
+    // vermelho (--accent) no clique — só o scale(0.85) sozinho passava
+    // meio despercebido; a cor confirma bem mais claro "isso registrou o
+    // clique".
+    cursor.classList.add('pressed');
     applyTransform();
   }
 
   function onUp() {
     pressed = false;
+    cursor.classList.remove('pressed');
     applyTransform();
   }
 
