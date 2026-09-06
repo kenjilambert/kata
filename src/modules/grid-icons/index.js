@@ -1935,6 +1935,29 @@ export const gridIconsModule = {
 
       sidebar.appendChild(createSection(t('themeSectionTitle'), [themeRow], sectionOptions('theme')));
 
+      // o painel de opções de tema precisa escapar do corte da seção que
+      // o contém — .control-section-body-inner tem overflow:hidden (é o
+      // que faz o colapso/expansão animado funcionar, ver style.css), e
+      // isso corta qualquer position:absolute normal que tente estourar
+      // pra fora dela, mesmo com z-index alto (o corte acontece na hora
+      // de PINTAR, não é uma questão de ordem de empilhamento). position:
+      // fixed com coordenada calculada na hora (só dá pra medir a posição
+      // real do gatilho DEPOIS dele estar de fato no DOM, por isso aqui
+      // embaixo, não junto da criação do combo lá em cima) escapa desse
+      // corte — mesma solução já usada no dropdown de select (ver
+      // ui/controls/select.js).
+      if (themeDropdownOpen) {
+        const openPanel = themeCombo.querySelector('.theme-combo-panel');
+        if (openPanel) {
+          const triggerRect = themeTrigger.getBoundingClientRect();
+          openPanel.style.position = 'fixed';
+          openPanel.style.top = `${triggerRect.bottom + 4}px`;
+          openPanel.style.left = `${triggerRect.left}px`;
+          openPanel.style.right = 'auto';
+          openPanel.style.width = `${triggerRect.width}px`;
+        }
+      }
+
       // --- Referência de imagem (estrutura) ---
       const structureWrap = document.createElement('div');
       structureWrap.className = 'control control-reference';

@@ -1148,7 +1148,12 @@ body {
   gap: 14px;
 }
 
+/* --value-proximity (0 no mínimo → 1 no máximo, setado via JS em
+   updateValueLabel — ui/controls/slider.js) esquenta o fundo pra
+   vermelho e escurece o número conforme o valor se aproxima do teto —
+   um reforço visual de "quase no máximo" sem precisar olhar o número. */
 .slider-value-box {
+  --value-proximity: 0;
   flex-shrink: 0;
   min-width: 52px;
   text-align: center;
@@ -1156,8 +1161,9 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   font-size: 12px;
-  color: var(--text);
-  background: var(--panel);
+  color: color-mix(in srgb, var(--text) calc((1 - var(--value-proximity)) * 100%), #000000);
+  background: color-mix(in srgb, var(--panel) calc((1 - var(--value-proximity)) * 100%), var(--accent));
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 /* slider 100% customizado (era <input type="range"> nativo) — nenhum
@@ -1190,15 +1196,6 @@ body {
 .slider-track-inner {
   position: relative;
   width: 100%;
-  /* só entra em jogo durante o arraste além da borda (ver setOverflow em
-     slider.js) — a transição fica DESLIGADA enquanto arrasta (.dragging
-     abaixo) pra acompanhar o dedo/mouse sem atraso nenhum, e liga só na
-     hora de soltar, pra voltar com uma "mola" em vez de arraste comum. */
-  transition: transform 0.35s var(--ease-expressive);
-}
-
-.slider-track-wrap.dragging .slider-track-inner {
-  transition: none;
 }
 
 .slider-track {
@@ -1985,7 +1982,7 @@ body {
   content: '';
   position: absolute;
   inset: 0;
-  background: #ffffff;
+  background: var(--accent-2);
   transform-origin: left center;
   animation: export-fill-sweep 0.6s ease-out;
   pointer-events: none;

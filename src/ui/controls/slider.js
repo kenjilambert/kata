@@ -2,20 +2,9 @@
 // vez o cursor do sistema (mãozinha) que insistia em aparecer por cima da
 // bolinha/trilho nativos mesmo com cursor:none explícito nos pseudo-
 // elementos (parte do controle é desenhada pelo SO, fora do alcance do
-// CSS em alguns navegadores). De quebra, ganha um toque "elástico" — ao
-// arrastar além do mínimo/máximo, o trilho estica um pouco (com
-// resistência) e volta com uma mola ao soltar, em vez de travar seco na
-// borda (inspirado no ElasticSlider do React Bits, adaptado sem
-// depender de nenhuma lib de animação).
-const MAX_OVERFLOW = 14; // px — o quanto no máximo o trilho "estica" além da borda.
-
-// resistência: quanto mais longe do limite, menos cada pixel extra de
-// arraste realmente estica (nunca estica infinitamente) — mesma curva
-// (tangente hiperbólica normalizada) do componente original.
-function dampen(px) {
-  const ratio = px / (MAX_OVERFLOW * 3);
-  return MAX_OVERFLOW * Math.tanh(ratio);
-}
+// CSS em alguns navegadores). O toque "elástico" (estica ao arrastar além
+// do mínimo/máximo) foi removido de novo — não pegou bem, voltou pro
+// comportamento simples de travar na borda.
 
 export function createSlider({ label, min, max, step = 1, value, onChange, formatValue = (v) => String(v) }) {
   const wrap = document.createElement('div');
@@ -81,26 +70,17 @@ export function createSlider({ label, min, max, step = 1, value, onChange, forma
 
   function updateValueLabel() {
     valueBox.textContent = formatValue(currentValue);
-  }
-
-  function setOverflow(px) {
-    // só o VISUAL estica (transform no grupo trilho+bolinha) — o valor de
-    // verdade nunca passa de min/max, só a sensação de "mola" ao puxar
-    // além da borda.
-    inner.style.transform = px ? `translateX(${px}px)` : '';
+    // quanto mais perto do máximo, mais o fundo da caixinha do valor vira
+    // vermelho (--accent) e o número fica preto — só um reforço visual de
+    // "tá quase no teto". --value-proximity vai de 0 (no mínimo) a 1 (no
+    // máximo); o resto é feito em CSS (ver .slider-value-box).
+    valueBox.style.setProperty('--value-proximity', String(percentFor(currentValue) / 100));
   }
 
   function valueFromClientX(clientX) {
     const rect = track.getBoundingClientRect();
     const ratio = rect.width === 0 ? 0 : (clientX - rect.left) / rect.width;
     return stepify(clamp(min + ratio * (max - min)));
-  }
-
-  function overflowFromClientX(clientX) {
-    const rect = track.getBoundingClientRect();
-    if (clientX < rect.left) return -dampen(rect.left - clientX);
-    if (clientX > rect.right) return dampen(clientX - rect.right);
-    return 0;
   }
 
   function commit(v, { silent = false } = {}) {
@@ -115,7 +95,6 @@ export function createSlider({ label, min, max, step = 1, value, onChange, forma
   function handlePointerMove(e) {
     if (!dragging) return;
     commit(valueFromClientX(e.clientX));
-    setOverflow(overflowFromClientX(e.clientX));
   }
 
   function handlePointerUp(e) {
@@ -124,18 +103,14 @@ export function createSlider({ label, min, max, step = 1, value, onChange, forma
     trackWrap.classList.remove('dragging');
     // releasePointerCapture pode lançar (ex.: captura já foi liberada
     // sozinha pelo navegador antes, tipo o ponteiro saindo da janela) —
-    // sem o try/catch, isso interrompia a função ANTES do setOverflow(0)
-    // logo abaixo, e o trilho ficava "grudado" esticado pra sempre.
+    // sem o try/catch descartando o erro, isso quebrava o resto do
+    // handler (inofensivo agora que não há mais nada depois, mas mantido
+    // por segurança).
     try {
       trackWrap.releasePointerCapture?.(e.pointerId);
     } catch {
-      /* ignora — o importante é resetar o overflow visual abaixo. */
+      /* ignora */
     }
-    // volta com uma mola (--ease-expressive já tem o "overshoot" certo)
-    // em vez de simplesmente sumir — só entra a transição AGORA, pra não
-    // deixar o arraste em si com atraso (ver CSS: .dragging desliga a
-    // transição do inner).
-    setOverflow(0);
   }
 
   trackWrap.addEventListener('pointerdown', (e) => {
@@ -150,7 +125,6 @@ export function createSlider({ label, min, max, step = 1, value, onChange, forma
          browser raro. */
     }
     commit(valueFromClientX(e.clientX));
-    setOverflow(overflowFromClientX(e.clientX));
   });
   trackWrap.addEventListener('pointermove', handlePointerMove);
   trackWrap.addEventListener('pointerup', handlePointerUp);
