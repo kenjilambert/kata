@@ -8,6 +8,7 @@ import {
   markPatternStateInitialized,
 } from '../../core/patternState.js';
 import { SYMMETRY_VALUES } from '../../core/symmetry.js';
+import { loadThemes, applyTheme as applyThemeShared, themePreviewColorsFor as themePreviewColorsForShared } from '../../core/themes.js';
 import { exportSvgString, exportPngFromSvgString, EXPORT_FRAME_RATIOS } from '../../core/export.js';
 import { listenForPaste, loadImageAsset } from '../../core/clipboard-input.js';
 import { openDrawCanvas } from '../../ui/drawCanvas.js';
@@ -53,7 +54,6 @@ const VARIATION_SIZE = 96;
 const VARIATION_COUNT = 6;
 const HISTORY_THUMB_SIZE = 88;
 const HISTORY_LIMIT = 24;
-const THEMES_URL = new URL('./themes.json', import.meta.url);
 const PRESETS_STORAGE_KEY = 'gpg-grid-icons-presets';
 
 function loadSavedPresets() {
@@ -99,27 +99,10 @@ export const gridIconsModule = {
   label: () => t('tabGridIcons'),
 
   async mount(container) {
-    const fetchedThemes = await fetch(THEMES_URL).then((res) => res.json());
-    // "Limpo" não é um tema visual como os outros (não tem curadoria de
-    // cor/forma/simetria) — é o ponto de partida zerado que o usuário pediu,
-    // por isso vive aqui como entrada sintética em vez de mais uma linha no
-    // themes.json.
-    const themes = {
-      blank: {
-        label: 'Limpo',
-        preset: 'blank',
-        shapes: ['square', 'disc'],
-        resolution: 2,
-        symmetry: 'none',
-        fillDensity: 1,
-        subdivisionChance: 0,
-        detailGradient: 'uniform',
-        fillMode: 'solid',
-        strokeWidth: 0.24,
-        rotation: 0,
-      },
-      ...fetchedThemes,
-    };
+    // carregar/aplicar tema agora mora em core/themes.js — compartilhado com
+    // o Espelho, que também tem seu próprio seletor de tema (ver
+    // video-tiles/index.js). "Limpo" (entrada sintética) já vem incluído.
+    const themes = await loadThemes();
     const themeKeys = Object.keys(themes);
 
     // state/history vivem em core/patternState.js (singleton de módulo) —
@@ -279,52 +262,10 @@ export const gridIconsModule = {
     }
 
     function applyTheme(themeKey) {
-      const theme = themes[themeKey];
-      const preset = clonePreset(PRESETS[theme.preset]);
-      state.themeKey = themeKey;
-      state.background = preset.background;
-      state.colors = preset.colors;
-      state.shapesAllowed = theme.shapes;
-      // só "Limpo" define resolution (quer sempre abrir na menor grade) —
-      // os outros temas nunca mexeram nisso, então o fallback mantém a
-      // resolução atual intocada pra eles.
-      state.resolution = theme.resolution ?? state.resolution;
-      state.symmetry = theme.symmetry;
-      state.fillDensity = theme.fillDensity;
-      state.subdivisionChance = theme.subdivisionChance ?? 0;
-      state.detailGradient = theme.detailGradient ?? 'uniform';
-      // themes.json só chegou a definir fillMode (nunca fillEnabled/
-      // strokeEnabled) — reconstrói o equivalente a partir dele.
-      state.fillEnabled = theme.fillEnabled ?? true;
-      state.strokeEnabled = theme.strokeEnabled ?? theme.fillMode === 'outline';
-      state.strokeColor = theme.strokeColor ?? state.strokeColor ?? '#000000';
-      state.strokeWidth = theme.strokeWidth ?? 0.24;
-      state.strokeOutlineWidth = theme.strokeOutlineWidth ?? 1;
-      state.gradientFillEnabled = theme.gradientFillEnabled ?? false;
-      state.gradientFillAngle = theme.gradientFillAngle ?? 45;
-      // sem receita definida no tema: usa as 2 primeiras cores da paleta dele
-      // como ponto de partida (a pessoa edita livremente depois, no editor
-      // de degradê — ver seção Preenchimento).
-      state.gradientStops = theme.gradientStops ?? [
-        { position: 0, color: preset.colors[0]?.color ?? '#c1502e' },
-        { position: 1, color: preset.colors[1]?.color ?? preset.colors[0]?.color ?? '#e0a458' },
-      ];
-      state.grainEnabled = theme.grainEnabled ?? false;
-      state.grainIntensity = theme.grainIntensity ?? 0.6;
-      state.grainSize = theme.grainSize ?? 0.5;
-      state.grainColor = theme.grainColor ?? '#000000';
-      state.rotation = theme.rotation ?? 0;
-      // trocar de tema deve mostrar as cores de verdade do tema — "inverter
-      // cores"/"ícone preto" ligados de uma randomização anterior ("Estou com
-      // sorte") ficavam grudados e o tema parecia estar com a paleta errada.
-      state.invertColors = false;
-      state.blackIcon = false;
-      // trocar de tema não deve religar a simetria por cima do guia de imagem —
-      // isso é o que causava o padrão "parar de seguir" o desenho/foto de referência.
-      if (state.useImageGuide) {
-        state.symmetryBeforeImageGuide = state.symmetry;
-        state.symmetry = 'none';
-      }
+      // lógica de verdade mora em core/themes.js (compartilhada com o
+      // Espelho) — só o que é específico do Azulejo (o override de grade do
+      // modo de edição manual) continua aqui.
+      applyThemeShared(themeKey, themes);
       refreshGridOverrideIfEditing();
     }
 
@@ -1826,9 +1767,7 @@ export const gridIconsModule = {
 
       // --- Tema ---
       function themePreviewColorsFor(key) {
-        if (key === 'custom') return [state.background, ...state.colors.map((c) => c.color)];
-        const preset = PRESETS[key];
-        return preset ? [preset.background, ...preset.colors.map((c) => c.color)] : [];
+        return themePreviewColorsForShared(key, themes);
       }
 
       function buildPreviewDots(colors, max = 4) {

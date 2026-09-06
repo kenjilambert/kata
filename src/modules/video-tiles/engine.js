@@ -91,7 +91,6 @@ export function createVideoTilesEngine(outputCanvas) {
     cols: 0,
     rows: 0,
     shapeScale: 1,
-    shapeMode: 'mixed', // uma forma do catálogo (ver VIDEO_SHAPES), ou 'mixed'
     colorMode: 'palette', // 'grayscale' | 'source' | 'palette'
     inkColor: '#f5efe4',
     background: '#141210',
@@ -110,7 +109,7 @@ export function createVideoTilesEngine(outputCanvas) {
   };
 
   function rebuildCellShapesIfNeeded() {
-    const pool = options.shapeMode === 'mixed' ? (options.shapesAllowed.length ? options.shapesAllowed : VIDEO_SHAPES) : [options.shapeMode];
+    const pool = options.shapesAllowed.length ? options.shapesAllowed : VIDEO_SHAPES;
     // assinatura barata (não precisa de JSON.stringify pesado): tamanho da
     // grade + o próprio pool, junto — muda sempre que a resolução/formato
     // muda OU o conjunto de formas disponível muda (troca de forma única,

@@ -1,6 +1,9 @@
 import { t, onLangChange } from '../../core/i18n.js';
 import { createSlider } from '../../ui/controls/slider.js';
 import { createSelect } from '../../ui/controls/select.js';
+import { createIconSelect } from '../../ui/controls/iconSelect.js';
+import { createShapeToggleGrid } from '../../ui/controls/shapeToggleGrid.js';
+import { createColorSwatches } from '../../ui/controls/colorSwatches.js';
 import { createToggleSwitch } from '../../ui/controls/toggleSwitch.js';
 import { createFrameTilePicker } from '../../ui/controls/frameTilePicker.js';
 import { createButton, flashExportSuccess } from '../../ui/controls/button.js';
@@ -8,9 +11,10 @@ import { createSection } from '../../ui/controls/section.js';
 import { downloadBlob, EXPORT_FRAME_RATIOS } from '../../core/export.js';
 import { patternState } from '../../core/patternState.js';
 import { SYMMETRY_VALUES } from '../../core/symmetry.js';
+import { hexToHsl, hslToHex } from '../../core/color.js';
+import { loadThemes, applyTheme, themePreviewColorsFor } from '../../core/themes.js';
 import { SHAPES } from '../grid-icons/shapes.js';
-import { framedGridDims } from '../grid-icons/generator.js';
-import { VIDEO_SHAPES } from './shapes.js';
+import { framedGridDims, buildCustomShapeDefs } from '../grid-icons/generator.js';
 import { createVideoTilesEngine } from './engine.js';
 
 // mesmas 4 opções do seletor "Formato" do Azulejo (ver frameTileOptions em
@@ -29,37 +33,12 @@ function frameOptions() {
   ];
 }
 
-// prévia de cada forma na grade de "Forma" — mesmo espírito da grade de
-// ícones do Azulejo (shapeToggleGrid.js): cada opção mostra o próprio
-// desenho SVG real da forma (não um nome sozinho), fill="currentColor" pra
-// seguir a cor do texto do botão (cinza normal, creme quando .active — ver
-// .shape-toggle no style.css). "Variado" ganha uma prévia própria — 4
-// pontinhos tipo face de dado, universalmente lido como "aleatório/misto" —
-// já que não existe um SHAPES['mixed'] de verdade pra desenhar. Uma
-// tentativa anterior tentava encaixar 4 formas reais em miniatura (2x2)
-// nessa mesma caixinha de 22px, mas ficava ilegível/confuso nesse tamanho
-// (virava uma manchinha sem forma clara nenhuma).
-const SHAPE_PREVIEW_SIZE = 22;
-function renderShapePreviewSvg(shapeKey) {
-  if (shapeKey === 'mixed') {
-    const s = SHAPE_PREVIEW_SIZE;
-    const r = s * 0.09;
-    const pad = s * 0.24;
-    const dots = [
-      [pad, pad],
-      [s - pad, pad],
-      [pad, s - pad],
-      [s - pad, s - pad],
-    ];
-    const circles = dots.map(([cx, cy]) => `<circle cx="${cx}" cy="${cy}" r="${r}" fill="currentColor" />`).join('');
-    return `<svg viewBox="0 0 ${s} ${s}" width="${s}" height="${s}">${circles}</svg>`;
-  }
-  const inner = SHAPES[shapeKey].draw(SHAPE_PREVIEW_SIZE, 'currentColor', 'tl');
-  return `<svg viewBox="0 0 ${SHAPE_PREVIEW_SIZE} ${SHAPE_PREVIEW_SIZE}" width="${SHAPE_PREVIEW_SIZE}" height="${SHAPE_PREVIEW_SIZE}">${inner}</svg>`;
-}
-
-// estado só do modo Vídeo — mesmo espírito do mosaicState (mosaic/index.js):
-// vive no escopo do módulo, sobrevive a trocar de aba e voltar.
+// estado só do modo Espelho — mesmo espírito do mosaicState (mosaic/index.js):
+// vive no escopo do módulo, sobrevive a trocar de aba e voltar. Formas,
+// cores, fundo e tema NÃO moram aqui — vêm direto do patternState
+// (compartilhado com o Azulejo, ver applyOptionsAndMaybePalette), pelo mesmo
+// motivo do Mosaico: editar aqui deve refletir lá e vice-versa, sem cópia
+// nenhuma pra dessincronizar.
 const videoState = {
   resolution: 32,
   // formato/proporção real — 'square' por padrão, mesmas 4 opções do
@@ -67,14 +46,8 @@ const videoState = {
   format: 'square',
   ratio: EXPORT_FRAME_RATIOS.square,
   shapeScale: 1,
-  // "mixed" + "palette" por padrão — replica de cara o mesmo azulejo (formas
-  // e cores) que já está configurado na aba Azulejo, igual o Mosaico faz,
-  // em vez de começar com um visual genérico à parte (ver applyOptionsAndMaybePalette,
-  // que também manda o shapesAllowed do Azulejo pro motor).
-  shapeMode: 'mixed',
   colorMode: 'palette',
   inkColor: '#f5efe4',
-  background: '#141210',
   invert: false,
   trail: 0,
   symmetry: 'none',
@@ -84,10 +57,6 @@ let cleanupLang = null;
 let engine = null;
 let recordTimerId = null;
 let gifTimerId = null;
-
-function shapeLabel(shape) {
-  return shape === 'mixed' ? t('videoShapeMixed') : t(`shape_${shape}`);
-}
 
 function formatSeconds(totalMs) {
   const s = Math.floor(totalMs / 1000);
@@ -101,6 +70,12 @@ export const videoTilesModule = {
   label: () => t('tabVideo'),
 
   async mount(container) {
+    // mesmo dicionário de temas do Azulejo (ver core/themes.js) — carregado
+    // de novo aqui (fetch é barato/cacheado) em vez de depender da aba
+    // Azulejo já ter carregado antes.
+    const themes = await loadThemes();
+    const themeKeys = Object.keys(themes);
+
     const root = document.createElement('div');
     root.className = 'mo-layout';
 
@@ -145,6 +120,7 @@ export const videoTilesModule = {
       // Vídeo reflete aqui na hora, do mesmo jeito que o Mosaico já faz.
       engine.setOptions({
         ...videoState,
+        background: patternState.background || '#141210',
         paletteColors: patternState.colors,
         shapesAllowed: patternState.shapesAllowed,
       });
@@ -388,45 +364,23 @@ export const videoTilesModule = {
       ];
       sidebar.appendChild(createSection(t('videoGridSection'), gridElements));
 
-      // só as formas que já estão ATIVAS no Azulejo (patternState.shapesAllowed)
-      // + "Variado" — herda a escolha de lá em vez de oferecer o catálogo
-      // inteiro (20 formas) independente do que a pessoa já configurou.
-      // Vazio (Azulejo nunca montado ainda) cai de volta pro catálogo
-      // inteiro, só pra nunca mostrar a grade de opções vazia.
-      const availableShapes = patternState.shapesAllowed.length ? patternState.shapesAllowed : VIDEO_SHAPES;
-      const shapeChipOptions = [...availableShapes, 'mixed'];
-      // se a forma selecionada não está mais disponível (a pessoa desligou
-      // ela no Azulejo enquanto isso), volta pro "Variado" em vez de ficar
-      // com uma seleção que não aparece mais na grade.
-      if (videoState.shapeMode !== 'mixed' && !availableShapes.includes(videoState.shapeMode)) {
-        videoState.shapeMode = 'mixed';
-      }
-
-      const shapeWrap = document.createElement('div');
-      shapeWrap.className = 'control control-shape-grid';
-      const shapeLabelSpan = document.createElement('span');
-      shapeLabelSpan.className = 'control-label';
-      shapeLabelSpan.textContent = t('videoShapeLabel');
-      shapeWrap.appendChild(shapeLabelSpan);
-      const shapeRow = document.createElement('div');
-      shapeRow.className = 'shape-toggle-row';
-      shapeChipOptions.forEach((shapeKey) => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'shape-toggle';
-        btn.title = shapeLabel(shapeKey);
-        btn.classList.toggle('active', videoState.shapeMode === shapeKey);
-        btn.innerHTML = renderShapePreviewSvg(shapeKey);
-        btn.addEventListener('click', () => {
-          videoState.shapeMode = shapeKey;
+      // EXATAMENTE o mesmo seletor de formas do Azulejo (mesmo componente,
+      // mesmo catálogo inteiro — incluindo ícones personalizados enviados
+      // por lá) — não um recorte só das ativas. `value` começa com as que
+      // já estão ligadas no Azulejo (patternState.shapesAllowed), mas dali
+      // pra frente é um multi-seleção de verdade: liga/desliga aqui muda o
+      // patternState direto, então volta refletido no Azulejo também (a
+      // mesma "receita" compartilhada, igual cores/tema abaixo).
+      const shapesGrid = createShapeToggleGrid({
+        label: t('shapesSection'),
+        shapes: { ...SHAPES, ...buildCustomShapeDefs(patternState.customShapes) },
+        value: patternState.shapesAllowed,
+        onChange: (value) => {
+          patternState.shapesAllowed = value;
           applyOptionsAndMaybePalette();
-          shapeRow.querySelectorAll('.shape-toggle').forEach((b) => b.classList.remove('active'));
-          btn.classList.add('active');
-        });
-        shapeRow.appendChild(btn);
+        },
       });
-      shapeWrap.appendChild(shapeRow);
-      sidebar.appendChild(createSection(t('videoShapeSection'), [shapeWrap]));
+      sidebar.appendChild(createSection(t('shapesSection'), [shapesGrid.el]));
 
       const effectsElements = [
         createSlider({
@@ -452,6 +406,42 @@ export const videoTilesModule = {
         }).el,
       ];
       sidebar.appendChild(createSection(t('videoEffectsSection'), effectsElements));
+
+      // "Tema" — mesmo dicionário/lógica do Azulejo (core/themes.js):
+      // aplica direto no patternState compartilhado, então troca de tema
+      // aqui também aparece se voltar pro Azulejo (e vice-versa). Prévia
+      // com bolinhas de cor, igual ao combo de lá — só o mecanismo do
+      // dropdown em si é o genérico (createIconSelect) em vez do combo
+      // com posicionamento próprio do Azulejo, pra não duplicar aquele
+      // tanto de código só pra isso.
+      function renderThemeDots(key) {
+        const wrap = document.createElement('span');
+        wrap.className = 'theme-combo-preview';
+        themePreviewColorsFor(key, themes)
+          .slice(0, 4)
+          .forEach((color) => {
+            const dot = document.createElement('span');
+            dot.className = 'theme-combo-dot';
+            dot.style.background = color;
+            wrap.appendChild(dot);
+          });
+        return wrap;
+      }
+      const themeSelect = createIconSelect({
+        label: t('themeLabel'),
+        options: [
+          ...(patternState.themeKey === 'custom' ? [{ value: 'custom', label: t('customThemeLabel'), renderIcon: () => renderThemeDots('custom') }] : []),
+          ...themeKeys.map((key) => ({ value: key, label: t(`theme_${key}`), renderIcon: () => renderThemeDots(key) })),
+        ],
+        value: patternState.themeKey ?? themeKeys[0],
+        onChange: (value) => {
+          if (value === 'custom') return;
+          applyTheme(value, themes);
+          buildSidebar();
+          applyOptionsAndMaybePalette();
+        },
+      });
+      sidebar.appendChild(createSection(t('themeSectionTitle'), [themeSelect.el]));
 
       const colorElements = [
         createSelect({
@@ -487,6 +477,36 @@ export const videoTilesModule = {
         inkRow.appendChild(inkInput);
         colorElements.push(inkRow);
       }
+      if (videoState.colorMode === 'palette') {
+        // MESMOS controles de cor do Azulejo (createColorSwatches + girar
+        // matiz), editando o patternState.colors compartilhado direto —
+        // não uma paleta separada só do Espelho.
+        const colorSwatches = createColorSwatches({
+          label: t('paletteLabel'),
+          colors: patternState.colors,
+          onChange: (colors) => {
+            patternState.colors = colors;
+            patternState.themeKey = 'custom';
+            applyOptionsAndMaybePalette();
+          },
+        });
+        colorElements.push(colorSwatches.el);
+
+        const ROTATE_COLORS_HUE_STEP = 30;
+        const rotateColorsButton = createButton({
+          label: t('rotateColorsButton'),
+          onClick: () => {
+            patternState.colors = patternState.colors.map((entry) => {
+              const { h, s, l } = hexToHsl(entry.color);
+              return { ...entry, color: hslToHex(h + ROTATE_COLORS_HUE_STEP, s, l) };
+            });
+            patternState.themeKey = 'custom';
+            buildSidebar();
+            applyOptionsAndMaybePalette();
+          },
+        });
+        colorElements.push(rotateColorsButton.el);
+      }
       const bgRow = document.createElement('div');
       bgRow.className = 'control control-background-color';
       const bgLabel = document.createElement('span');
@@ -495,9 +515,12 @@ export const videoTilesModule = {
       const bgInput = document.createElement('input');
       bgInput.type = 'color';
       bgInput.className = 'background-color-input';
-      bgInput.value = videoState.background;
+      bgInput.value = patternState.background || '#141210';
       bgInput.addEventListener('input', () => {
-        videoState.background = bgInput.value;
+        // mesmo fundo do Azulejo (patternState.background) — não um separado
+        // só do Espelho.
+        patternState.background = bgInput.value;
+        patternState.themeKey = 'custom';
         applyOptionsAndMaybePalette();
       });
       bgRow.appendChild(bgLabel);
