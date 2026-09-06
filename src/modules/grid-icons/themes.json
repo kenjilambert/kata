@@ -1,4 +1,5 @@
 {
+  "kata": { "label": "Kata", "preset": "kata", "shapes": ["diamond", "square", "triangle", "quarterCircleInverse", "disc"], "resolution": 4, "symmetry": "none", "fillDensity": 1, "subdivisionChance": 0, "detailGradient": "uniform", "fillMode": "solid", "strokeWidth": 0.24, "rotation": 0 },
   "terracota": { "label": "Terracota", "preset": "terracota", "shapes": ["diamond", "square", "triangle", "quarterCircleInverse", "disc"], "symmetry": "mirror-full", "fillDensity": 0.85, "subdivisionChance": 0.2, "detailGradient": "center", "fillMode": "solid", "strokeWidth": 0.24, "rotation": 0 },
   "tropical": { "label": "Tropical", "preset": "tropical", "shapes": ["diamond", "triangle", "quarterCircle", "dot", "lens"], "symmetry": "rotational", "fillDensity": 0.85, "subdivisionChance": 0.15, "detailGradient": "edge", "fillMode": "solid", "strokeWidth": 0.24, "rotation": 0 },
   "nordico": { "label": "Nórdico", "preset": "nordico", "shapes": ["triangle", "square", "cross", "ring", "cornerNotch"], "symmetry": "mirror-full", "fillDensity": 0.85, "subdivisionChance": 0.15, "detailGradient": "uniform", "fillMode": "solid", "strokeWidth": 0.24, "rotation": 0 },

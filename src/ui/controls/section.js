@@ -40,14 +40,25 @@ export function createSection(title, elements, { collapsed = false, onToggleColl
 
   const body = document.createElement('div');
   body.className = 'control-section-body';
-  elements.forEach((el) => body.appendChild(el));
+  // conteúdo de verdade fica num wrapper à parte (.control-section-body-
+  // inner) — é ele que corta (overflow:hidden) enquanto .control-section-
+  // body anima a "altura automática" via grid-template-rows (ver
+  // style.css); sem esse wrapper o grid não tem uma única linha pra
+  // encolher, só os filhos soltos.
+  const bodyInner = document.createElement('div');
+  bodyInner.className = 'control-section-body-inner';
+  elements.forEach((el) => bodyInner.appendChild(el));
+  body.appendChild(bodyInner);
 
   wrap.appendChild(header);
   wrap.appendChild(body);
 
   let isCollapsed = collapsed;
   function applyCollapsed() {
-    body.style.display = isCollapsed ? 'none' : '';
+    // era body.style.display = 'none'/'' — some/aparece na hora, sem
+    // transição nenhuma. A classe sozinha já basta agora: quem "esconde"
+    // de verdade é o CSS (grid-template-rows 0fr + overflow:hidden no
+    // wrapper interno), com uma animação suave em vez de um corte seco.
     wrap.classList.toggle('collapsed', isCollapsed);
   }
   applyCollapsed();

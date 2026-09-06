@@ -1346,10 +1346,8 @@ export const gridIconsModule = {
       }
     }
 
-    // opções do seletor de formato — usadas tanto pela barra própria do
-    // desktop (buildFrameBar) quanto pela seção "Formato" que, no mobile,
-    // vive junto das outras categorias de ajuste (ver isMobileViewport lá
-    // embaixo, perto de onde a barra de categorias é montada).
+    // opções do seletor de formato — usadas pela seção "Formato" (sempre a
+    // primeira da sidebar, ver mais abaixo, perto de onde ela é montada).
     function frameTileOptions() {
       return [
         { value: 'square', ratio: EXPORT_FRAME_RATIOS.square, label: t('exportFrame_square'), caption: '1:1' },
@@ -1362,30 +1360,6 @@ export const gridIconsModule = {
     function onFrameChange(value) {
       exportFrame = value;
       updatePreviewFrame();
-    }
-
-    // fica FORA da sidebar, num menu próprio em cima de tudo — é a config
-    // mais importante (afeta como o export sai), não devia ficar escondida
-    // dentro de uma dúzia de outras seções. Só no desktop — no mobile o
-    // formato virou só mais uma categoria de ajuste junto das outras (ver
-    // isMobileViewport perto da barra de categorias), não fica mais separado
-    // num menu próprio acima da sidebar. Chamado 1x no mount e de novo na
-    // troca de idioma (os rótulos de cada opção são traduzidos).
-    function buildFrameBar() {
-      const bar = document.createElement('div');
-      bar.className = 'gi-frame-bar';
-      // sem título visível (só os ícones, ver createFrameTilePicker) — o
-      // aria-label mantém isso identificável pra quem usa leitor de tela.
-      bar.setAttribute('aria-label', t('exportFrameLabel'));
-
-      const picker = createFrameTilePicker({
-        options: frameTileOptions(),
-        value: exportFrame,
-        onChange: onFrameChange,
-      });
-
-      bar.appendChild(picker.el);
-      return bar;
     }
 
     function renderVariations() {
@@ -2792,8 +2766,7 @@ export const gridIconsModule = {
       );
 
       // --- Ações (exportar) — continua no fim da sidebar, do jeito de
-      // sempre. O seletor de formato mora fora da sidebar agora (ver
-      // buildFrameBar, chamado 1x no mount + de novo na troca de idioma). ---
+      // sempre. ---
       const exportSvgButton = createButton({
         label: t('exportSvgButton'),
         variant: 'primary',
@@ -2844,6 +2817,20 @@ export const gridIconsModule = {
         sidebar.appendChild(actions);
       }
 
+      // --- Formato --- sempre uma seção normal da sidebar agora (era uma
+      // barra própria fora dela, só no desktop, tentando ficar alinhada
+      // com o topo do preview do lado — nunca bateu certo em toda largura
+      // de tela). Vira a PRIMEIRA seção, igual as outras (chevron
+      // colapsável no desktop, aba de categoria no mobile — ver mais
+      // abaixo), sem precisar alinhar nada com mais nada.
+      const formatPicker = createFrameTilePicker({
+        options: frameTileOptions(),
+        value: exportFrame,
+        onChange: onFrameChange,
+      });
+      const formatSection = createSection(t('formatSectionTitle'), [formatPicker.el], sectionOptions('format'));
+      sidebar.insertBefore(formatSection, sidebar.firstChild);
+
       // --- aba de categorias (só no mobile) ---
       // no desktop cada seção continua com seu próprio chevron colapsável
       // (inalterado). No mobile isso virava uma lista enorme de acordeões
@@ -2854,20 +2841,6 @@ export const gridIconsModule = {
       // do app — sem isso, .control-section[data-section-id] (setado em
       // ui/controls/section.js) não teria como saber qual delas mostrar.
       if (isMobileViewport) {
-        // "Formato" também vira só mais uma categoria de ajuste aqui — no
-        // mobile ele não fica mais separado num menu próprio acima da
-        // sidebar (isso só faz sentido no desktop, onde tem espaço de
-        // sobra no topo); aqui ele entra no mesmo mecanismo de abas por
-        // ícone que todas as outras, como a primeira (continua sendo a
-        // config mais importante — ver comentário em buildFrameBar).
-        const formatPicker = createFrameTilePicker({
-          options: frameTileOptions(),
-          value: exportFrame,
-          onChange: onFrameChange,
-        });
-        const formatSection = createSection(t('exportFrameLabel'), [formatPicker.el], sectionOptions('format'));
-        sidebar.insertBefore(formatSection, sidebar.firstChild);
-
         const allCategorySections = Array.from(sidebar.querySelectorAll('.control-section[data-section-id]'));
         // "Exportar" sai da barra de categorias — vira o 4º ícone da
         // trilha do preview (ver toolbarRail/exportRailButton), não mais
@@ -2962,14 +2935,11 @@ export const gridIconsModule = {
     }
 
     buildSidebar();
-    // no mobile o formato já entra dentro da sidebar (ver isMobileViewport
-    // em buildSidebar, perto da barra de categorias) — sem barra própria
-    // solta aqui em cima, que era o que sobrava só com "Formato" e os
-    // botões de exportar visíveis, escondendo o resto dos ajustes.
-    let frameBar = isMobileViewport ? null : buildFrameBar();
+    // "Formato" já entra dentro da sidebar (primeira seção, ver
+    // buildSidebar) — sem barra própria solta aqui em cima tentando ficar
+    // alinhada com o preview do lado, nunca batia certo em toda largura.
     const sidebarColumn = document.createElement('div');
     sidebarColumn.className = 'gi-sidebar-column';
-    if (frameBar) sidebarColumn.appendChild(frameBar);
     sidebarColumn.appendChild(sidebar);
 
     root.appendChild(sidebarColumn);
@@ -3032,14 +3002,9 @@ export const gridIconsModule = {
       document.removeEventListener('keydown', handleDocumentKeydownForThemeDropdown);
     };
     cleanupLang = onLangChange(() => {
-      // no mobile não existe frameBar próprio (ver acima) — o formato mora
-      // dentro da sidebar, e buildSidebar() (chamado embaixo) já refaz ele
-      // com os textos traduzidos junto de tudo mais.
-      if (frameBar) {
-        const newFrameBar = buildFrameBar();
-        frameBar.replaceWith(newFrameBar);
-        frameBar = newFrameBar;
-      }
+      // "Formato" mora dentro da sidebar (primeira seção) — buildSidebar()
+      // (chamado embaixo) já refaz ela com os textos traduzidos junto de
+      // tudo mais, sem precisar de nada especial aqui.
       resultTitle.textContent = t('resultTitle');
       resultTabLabel.textContent = t('resultTitle');
       variationsLabel.textContent = t('variationsLabel');

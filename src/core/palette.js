@@ -4,6 +4,20 @@ export const PRESETS = {
     background: '#ffffff',
     colors: [{ color: '#111111', weight: 1 }],
   },
+  // paleta do site em si (mesmo --bg/--accent/--accent-2/--text de
+  // style.css) — o primeiro tema de verdade que aparece ao abrir o site
+  // (antes do Terracota), ver themes.json e o "find(key => key !== 'blank')"
+  // em grid-icons/index.js (pega sempre o primeiro tema real da lista).
+  kata: {
+    label: 'Kata',
+    background: '#0a0a0a',
+    colors: [
+      { color: '#ea4530', weight: 3 },
+      { color: '#f1eec0', weight: 3 },
+      { color: '#3aa1d8', weight: 2 },
+      { color: '#141414', weight: 1 },
+    ],
+  },
   tropical: {
     label: 'Tropical',
     background: '#0b3d2e',

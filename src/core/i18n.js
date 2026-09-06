@@ -124,6 +124,10 @@ const STRINGS = {
     // grid-icons/index.js) — agrupa os 2 botões acima, que no mobile só
     // aparecem quando essa aba está selecionada (não mais em toda aba).
     exportSectionTitle: 'Exportar',
+    // título curto da seção — a barra própria fora da sidebar (que usava
+    // exportFrameLabel, mais longo) não existe mais; "Formato" sozinho já
+    // basta como cabeçalho de seção, igual "Tema"/"Grade"/etc.
+    formatSectionTitle: 'Formato',
     exportFrameLabel: 'Formato de exportação',
     exportFrame_square: 'Quadrado (1:1)',
     exportFrame_portrait: 'Retrato (4:5)',
@@ -133,6 +137,7 @@ const STRINGS = {
     historyLabel: 'Histórico',
 
     theme_blank: 'Limpo',
+    theme_kata: 'Kata',
     theme_tropical: 'Tropical',
     theme_nordico: 'Nórdico',
     theme_terracota: 'Terracota',
@@ -331,6 +336,10 @@ const STRINGS = {
     exportSvgButton: 'Export SVG',
     exportPngButton: 'Export PNG',
     exportSectionTitle: 'Export',
+    // título curto da seção — a barra própria fora da sidebar (que usava
+    // exportFrameLabel, mais longo) não existe mais; "Formato" sozinho já
+    // basta como cabeçalho de seção, igual "Tema"/"Grade"/etc.
+    formatSectionTitle: 'Format',
     exportFrameLabel: 'Export format',
     exportFrame_square: 'Square (1:1)',
     exportFrame_portrait: 'Portrait (4:5)',
@@ -340,6 +349,7 @@ const STRINGS = {
     historyLabel: 'History',
 
     theme_blank: 'Blank',
+    theme_kata: 'Kata',
     theme_tropical: 'Tropical',
     theme_nordico: 'Nordic',
     theme_terracota: 'Terracotta',

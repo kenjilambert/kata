@@ -334,11 +334,11 @@ body {
   align-items: stretch;
 }
 
-/* coluna da sidebar: barra de formato em cima (menu próprio, fora do
-   painel de ajustes) + o painel de ajustes em si embaixo, dividindo a
-   mesma largura de 320px — é a config mais importante, faz sentido ela
-   ficar por cima do menu de configurações, não perdida no topo do site
-   inteiro. */
+/* coluna da sidebar — só o painel de ajustes mesmo (.gi-controls). Já foi
+   uma barra de formato própria aqui em cima, fora do painel, tentando
+   ficar alinhada com o preview do lado (nunca batia certo em toda largura
+   de tela) — "Formato" agora é só a primeira seção do painel, igual
+   Tema/Grade/etc. */
 .gi-sidebar-column {
   width: 320px;
   flex-shrink: 0;
@@ -346,20 +346,6 @@ body {
   flex-direction: column;
   gap: 16px;
   min-height: 0;
-}
-
-/* só existe no desktop — no mobile o formato virou mais uma categoria de
-   ajuste dentro da sidebar (ver isMobileViewport em grid-icons/index.js,
-   perto de onde a barra de categorias é montada), não um elemento próprio
-   aqui em cima. */
-.gi-frame-bar {
-  flex-shrink: 0;
-  position: relative;
-  /* .gi-stage tem padding-top:24px (o preview começa 24px mais baixo que
-     o topo da coluna) — sem essa margem aqui, o formato ficava 24px mais
-     alto que o preview do lado, desalinhados. Só existe no desktop (no
-     mobile o formato mora dentro da sidebar, não tem essa barra própria). */
-  margin-top: 24px;
 }
 
 .gi-controls {
@@ -1067,11 +1053,32 @@ body {
   color: var(--accent-2);
 }
 
+/* colapsa/expande com animação de verdade (grid-template-rows 1fr↔0fr —
+   truque que anima "altura automática" sem JS medindo pixel nenhum) em
+   vez de só aparecer/sumir com display:none instantâneo. O conteúdo de
+   verdade mora em .control-section-body-inner (overflow:hidden, ver
+   abaixo) — precisa desse wrapper porque o grid só some por completo
+   quando tem UMA linha só encolhendo, não vários filhos soltos. */
 .control-section-body {
+  display: grid;
+  grid-template-rows: 1fr;
+  margin-top: 20px;
+  transition: grid-template-rows 0.35s var(--ease-expressive), margin-top 0.35s var(--ease-expressive),
+    opacity 0.25s ease;
+}
+
+.control-section-body-inner {
   display: flex;
   flex-direction: column;
   gap: 22px;
-  margin-top: 20px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.control-section.collapsed .control-section-body {
+  grid-template-rows: 0fr;
+  margin-top: 0;
+  opacity: 0;
 }
 
 .control-section-title {
