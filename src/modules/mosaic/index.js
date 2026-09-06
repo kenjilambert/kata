@@ -1,10 +1,9 @@
 import { t, onLangChange } from '../../core/i18n.js';
-import { enableSmoothScroll } from '../../core/smoothScroll.js';
 import { createSlider } from '../../ui/controls/slider.js';
 import { createSelect } from '../../ui/controls/select.js';
 import { createIconSelect } from '../../ui/controls/iconSelect.js';
 import { createToggleSwitch } from '../../ui/controls/toggleSwitch.js';
-import { createButton } from '../../ui/controls/button.js';
+import { createButton, flashExportSuccess } from '../../ui/controls/button.js';
 import { createSection } from '../../ui/controls/section.js';
 import { exportSvgString, exportPngFromSvgString } from '../../core/export.js';
 import { exportSeamlessPatternAsAi } from '../../core/aiPatternExport.js';
@@ -95,7 +94,6 @@ export const mosaicModule = {
 
     const sidebar = document.createElement('div');
     sidebar.className = 'mo-controls';
-    enableSmoothScroll(sidebar);
 
     const stage = document.createElement('div');
     stage.className = 'mo-stage';
@@ -540,12 +538,18 @@ export const mosaicModule = {
       const exportSvgButton = createButton({
         label: t('exportSvgButton'),
         variant: 'primary',
-        onClick: () => exportSvgString(preview.innerHTML, 'mosaico.svg'),
+        onClick: () => {
+          exportSvgString(preview.innerHTML, 'mosaico.svg');
+          flashExportSuccess(exportSvgButton.el);
+        },
       });
       const exportPngButton = createButton({
         label: t('exportPngButton'),
         variant: 'primary',
-        onClick: () => exportPngFromSvgString(preview.innerHTML, 'mosaico.png'),
+        onClick: () => {
+          exportPngFromSvgString(preview.innerHTML, 'mosaico.png');
+          flashExportSuccess(exportPngButton.el);
+        },
       });
       const actions = document.createElement('div');
       actions.className = 'mo-actions';
@@ -553,7 +557,10 @@ export const mosaicModule = {
         const exportAiButton = createButton({
           label: t('mosaicExportAiButton'),
           variant: 'primary',
-          onClick: () => exportSeamlessPatternAsAi(preview.innerHTML, 'padrao.ai'),
+          onClick: () => {
+            exportSeamlessPatternAsAi(preview.innerHTML, 'padrao.ai');
+            flashExportSuccess(exportAiButton.el);
+          },
         });
         actions.appendChild(exportAiButton.el);
       }

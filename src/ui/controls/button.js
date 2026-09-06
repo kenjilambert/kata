@@ -27,3 +27,19 @@ export function setButtonLabel(el, text) {
   if (labelSpan) labelSpan.textContent = text;
   else el.textContent = text;
 }
+
+// "preenche" o botão de branco da esquerda pra direita e desaparece — só
+// uma confirmação visual de que a exportação aconteceu (ver .export-flash
+// em style.css). Tira e recoloca a classe (com um reflow forçado no meio)
+// pra reiniciar a animação do zero mesmo se a pessoa clicar de novo antes
+// da anterior terminar.
+export function flashExportSuccess(el) {
+  el.classList.remove('export-flash');
+  void el.offsetWidth;
+  el.classList.add('export-flash');
+  el.addEventListener(
+    'animationend',
+    () => el.classList.remove('export-flash'),
+    { once: true }
+  );
+}

@@ -14,14 +14,13 @@ import { openDrawCanvas } from '../../ui/drawCanvas.js';
 import { extractPaletteFromBlob } from '../../core/imagePalette.js';
 import { sampleImageGrid } from '../../core/imageSampling.js';
 import { t, onLangChange } from '../../core/i18n.js';
-import { enableSmoothScroll } from '../../core/smoothScroll.js';
 import { createSlider } from '../../ui/controls/slider.js';
 import { createSelect } from '../../ui/controls/select.js';
 import { createIconSelect } from '../../ui/controls/iconSelect.js';
 import { createColorSwatches } from '../../ui/controls/colorSwatches.js';
 import { createShapeToggleGrid } from '../../ui/controls/shapeToggleGrid.js';
 import { createToggleSwitch } from '../../ui/controls/toggleSwitch.js';
-import { createButton, setButtonLabel } from '../../ui/controls/button.js';
+import { createButton, setButtonLabel, flashExportSuccess } from '../../ui/controls/button.js';
 import { createPressButton } from '../../ui/controls/pressButton.js';
 import { createSection } from '../../ui/controls/section.js';
 import { createFrameTilePicker } from '../../ui/controls/frameTilePicker.js';
@@ -469,10 +468,6 @@ export const gridIconsModule = {
 
     const sidebar = document.createElement('div');
     sidebar.className = 'gi-controls';
-    // roda do mouse com inércia suave em vez do scroll seco padrão do
-    // navegador (buildSidebar() só troca o innerHTML depois, o listener
-    // da roda fica de pé o tempo todo, não precisa reanexar).
-    enableSmoothScroll(sidebar);
 
     const stage = document.createElement('div');
     stage.className = 'gi-stage';
@@ -1903,11 +1898,16 @@ export const gridIconsModule = {
         const panel = document.createElement('div');
         panel.className = 'theme-combo-panel';
 
-        panelOptions.forEach((opt) => {
+        panelOptions.forEach((opt, index) => {
           const row = document.createElement('button');
           row.type = 'button';
           row.className = 'theme-combo-row';
           row.classList.toggle('active', opt.value === state.themeKey);
+          // mesma cascata rápida do outro dropdown (ver .control-select-
+          // option-in em style.css) — tema tem muito mais opções, por
+          // isso o passo é menor (12ms) pra não demorar segundos até a
+          // última aparecer.
+          row.style.animationDelay = `${index * 12}ms`;
           row.appendChild(buildPreviewDots(themePreviewColorsFor(opt.value)));
           const rowLabel = document.createElement('span');
           rowLabel.textContent = themeDisplayLabel(opt.value);
@@ -2775,13 +2775,15 @@ export const gridIconsModule = {
       const exportSvgButton = createButton({
         label: t('exportSvgButton'),
         variant: 'primary',
-        onClick: () =>
+        onClick: () => {
           // currentFramedIconSvg já é a composição final (quadrada OU a
           // gerada pro formato escolhido, ver updatePreviewFrame) — não
           // precisa mais nenhuma moldura/repetição aplicada por cima aqui.
           exportSvgString(currentFramedIconSvg, `icone-${state.themeKey}.svg`, {
             background: state.transparentBg ? null : state.background,
-          }),
+          });
+          flashExportSuccess(exportSvgButton.el);
+        },
       });
 
       const exportPngButton = createButton({
@@ -2792,6 +2794,7 @@ export const gridIconsModule = {
             await exportPngFromSvgString(currentFramedIconSvg, `icone-${state.themeKey}.png`, {
               background: state.transparentBg ? null : state.background,
             });
+            flashExportSuccess(exportPngButton.el);
           } catch (err) {
             // sem isso, uma falha (ex.: navegador bloqueando canvas/blob)
             // não dava sinal nenhum pra quem clicou — parecia que o botão

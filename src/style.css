@@ -1160,75 +1160,80 @@ body {
   background: var(--panel);
 }
 
-/* slider customizado (era só accent-color no input nativo) — o nativo do
-   Chrome desenha uma bolinha branca com um contorno/halo por cima da cor
-   de destaque, nunca fica "limpo" na paleta do site. Trilho fino com o
-   trecho preenchido em --accent-2 (a mesma cor de destaque secundária
-   usada em outros controles) até --fill-percent (setado via JS em
-   createSlider — ui/controls/slider.js), bolinha sólida clara (--text,
-   o creme do site) sem nenhum contorno branco. */
-.control-slider input[type="range"] {
+/* slider 100% customizado (era <input type="range"> nativo) — nenhum
+   pedaço dele é desenhado pelo sistema operacional agora, então o cursor
+   customizado do site (ver ui/customCursor.js) nunca mais perde o lugar
+   pra mãozinha nativa, problema que persistia mesmo com cursor:none nos
+   pseudo-elementos do range nativo (parte do controle nativo é fora do
+   alcance do CSS em alguns navegadores). Ver ui/controls/slider.js pra a
+   mecânica de arraste/teclado. */
+.slider-track-wrap {
   flex: 1;
-  -webkit-appearance: none;
-  appearance: none;
+  min-width: 0;
+  display: flex;
+  align-items: center;
   height: 20px;
-  background: transparent;
+  padding: 0 8px;
+  margin: 0 -8px;
   cursor: pointer;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
-.control-slider input[type="range"]::-webkit-slider-runnable-track {
-  height: 4px;
+.slider-track-wrap:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 4px;
   border-radius: var(--radius-pill);
-  background: linear-gradient(
-    to right,
-    var(--accent-2) var(--fill-percent, 0%),
-    var(--track-off) var(--fill-percent, 0%)
-  );
 }
 
-.control-slider input[type="range"]::-moz-range-track {
+.slider-track-inner {
+  position: relative;
+  width: 100%;
+  /* só entra em jogo durante o arraste além da borda (ver setOverflow em
+     slider.js) — a transição fica DESLIGADA enquanto arrasta (.dragging
+     abaixo) pra acompanhar o dedo/mouse sem atraso nenhum, e liga só na
+     hora de soltar, pra voltar com uma "mola" em vez de arraste comum. */
+  transition: transform 0.35s var(--ease-expressive);
+}
+
+.slider-track-wrap.dragging .slider-track-inner {
+  transition: none;
+}
+
+.slider-track {
+  position: relative;
+  width: 100%;
   height: 4px;
   border-radius: var(--radius-pill);
   background: var(--track-off);
+  overflow: visible;
 }
 
-.control-slider input[type="range"]::-moz-range-progress {
-  height: 4px;
+.slider-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
   border-radius: var(--radius-pill);
   background: var(--accent-2);
 }
 
-.control-slider input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
+.slider-thumb {
+  position: absolute;
+  top: 50%;
   width: 16px;
   height: 16px;
-  margin-top: -6px;
-  border: none;
   border-radius: 50%;
   background: var(--text);
-  cursor: pointer;
+  transform: translate(-50%, -50%) scale(1);
   transition: transform 0.15s var(--ease-expressive);
 }
 
-.control-slider input[type="range"]::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  border: none;
-  border-radius: 50%;
-  background: var(--text);
-  cursor: pointer;
-  transition: transform 0.15s var(--ease-expressive);
-}
-
-.control-slider input[type="range"]:hover::-webkit-slider-thumb,
-.control-slider input[type="range"]:focus-visible::-webkit-slider-thumb {
-  transform: scale(1.15);
-}
-
-.control-slider input[type="range"]:hover::-moz-range-thumb,
-.control-slider input[type="range"]:focus-visible::-moz-range-thumb {
-  transform: scale(1.15);
+.slider-track-wrap:hover .slider-thumb,
+.slider-track-wrap:focus-visible .slider-thumb,
+.slider-track-wrap.dragging .slider-thumb {
+  transform: translate(-50%, -50%) scale(1.15);
 }
 
 .control-toggle-switch {
@@ -1264,8 +1269,9 @@ body {
   border: 1px solid var(--border);
   border-radius: 50%;
   /* mola leve em vez de deslizar seco — pequeno "estica e assenta"
-     (--ease-expressive) toda vez que liga/desliga. */
-  transition: transform 0.3s var(--ease-expressive);
+     (--ease-expressive) toda vez que liga/desliga. Cor/borda também
+     suavizadas (antes só a posição deslizava, a cor trocava seca). */
+  transition: transform 0.3s var(--ease-expressive), background-color 0.2s ease, border-color 0.2s ease;
 }
 
 .toggle-switch.on {
@@ -1458,12 +1464,16 @@ body {
   padding: 8px 10px;
   border: none;
   border-bottom: 1px solid var(--track-off);
-  background: var(--panel);
+  /* transparente (era --panel sólido) — o painel já é semitransparente +
+     blur (ver .theme-combo-panel); um fundo opaco por linha escondia
+     esse efeito atrás do texto de cada opção. */
+  background: transparent;
   color: var(--text);
   font-size: 13px;
   font-family: inherit;
   cursor: pointer;
   text-align: left;
+  animation: control-select-option-in 0.15s var(--ease-expressive) both;
 }
 
 .theme-combo-row:last-child {
@@ -1569,6 +1579,22 @@ body {
   animation: gi-section-enter 0.2s var(--ease-expressive);
 }
 
+/* cascata rápida ao abrir — cada opção entra um pouquinho depois da
+   anterior (animation-delay setado via JS, ver renderOptions em
+   select.js), começando pela primeira; "both" mantém o estado inicial
+   (opacity:0) durante o delay, sem piscar tudo visível antes da vez de
+   cada uma. */
+@keyframes control-select-option-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .control-select-option {
   width: 100%;
   display: block;
@@ -1581,6 +1607,7 @@ body {
   font-family: inherit;
   text-align: left;
   cursor: pointer;
+  animation: control-select-option-in 0.15s var(--ease-expressive) both;
 }
 
 .control-select-option:last-child {
@@ -1929,6 +1956,39 @@ body {
   color: var(--accent-text);
   font-weight: 700;
   border-radius: var(--radius-pill);
+}
+
+/* confirmação visual de exportação — o botão "enche" de branco da
+   esquerda pra direita e some (ver flashExportSuccess em
+   ui/controls/button.js, chamado depois de Exportar SVG/PNG). */
+@keyframes export-fill-sweep {
+  0% {
+    transform: scaleX(0);
+    opacity: 0.85;
+  }
+  70% {
+    transform: scaleX(1);
+    opacity: 0.85;
+  }
+  100% {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+}
+
+.control-button.export-flash {
+  position: relative;
+  overflow: hidden;
+}
+
+.control-button.export-flash::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: #ffffff;
+  transform-origin: left center;
+  animation: export-fill-sweep 0.6s ease-out;
+  pointer-events: none;
 }
 
 .draw-overlay {

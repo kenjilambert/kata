@@ -67,7 +67,7 @@ export function createSelect({ label, options, value, onChange }) {
 
   function renderOptions() {
     panel.innerHTML = '';
-    options.forEach((opt) => {
+    options.forEach((opt, index) => {
       const isActive = String(opt.value) === String(currentValue);
       const row = document.createElement('button');
       row.type = 'button';
@@ -76,6 +76,10 @@ export function createSelect({ label, options, value, onChange }) {
       row.setAttribute('role', 'option');
       row.setAttribute('aria-selected', String(isActive));
       row.textContent = opt.label;
+      // cascata rápida começando do primeiro item (ver @keyframes control-
+      // select-option-in) — rápido o bastante pra não enrolar mesmo com
+      // uma lista grande (25ms * índice, sem acumular além disso).
+      row.style.animationDelay = `${index * 25}ms`;
       row.addEventListener('click', () => {
         currentValue = opt.value;
         updateTriggerLabel();
