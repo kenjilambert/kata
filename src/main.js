@@ -1,6 +1,7 @@
 import { createModuleSwitcher } from './ui/module-switcher.js';
 import { gridIconsModule } from './modules/grid-icons/index.js';
 import { mosaicModule } from './modules/mosaic/index.js';
+import { videoTilesModule } from './modules/video-tiles/index.js';
 import { initCustomCursor } from './ui/customCursor.js';
 import { renderDynamicLogo } from './ui/dynamicLogo.js';
 import { getLang, setLang, onLangChange, AVAILABLE_LANGS } from './core/i18n.js';
@@ -17,8 +18,11 @@ const langSwitcherEl = document.getElementById('lang-switcher');
 // Grade muda com o módulo ativo (2x2 no Azulejo, 3x3 no Mosaico) — mesmo
 // tamanho em pixels sempre (ver LOGO_ICON_SIZE em dynamicLogo.js), só a
 // densidade da grade sinaliza qual dos dois tá aberto.
+let currentModuleId = null;
+
 function updateLogoAndFavicon(moduleId) {
-  const gridSize = moduleId === 'mosaic' ? 3 : 2;
+  if (moduleId) currentModuleId = moduleId;
+  const gridSize = currentModuleId === 'mosaic' ? 3 : 2;
   const logoSvg = renderDynamicLogo(gridSize);
   logoEl.innerHTML = logoSvg;
 
@@ -33,6 +37,17 @@ function updateLogoAndFavicon(moduleId) {
   faviconEl.href = `data:image/svg+xml,${encodeURIComponent(logoSvg)}`;
   document.head.appendChild(faviconEl);
 }
+
+// logo/favicon regeneram sozinhos a cada 1s, mas só enquanto a aba Espelho
+// (id 'video') está ativa — nas outras abas o logo continua do jeito de
+// sempre (só muda ao trocar de módulo/aba, nunca sozinho). renderDynamicLogo
+// já sorteia uma seed nova a cada chamada (ver ui/dynamicLogo.js), então só
+// precisa ser chamado nesse intervalo; moduleId omitido reaproveita
+// currentModuleId (não muda o tamanho da grade, só gera outra composição).
+setInterval(() => {
+  if (currentModuleId !== 'video') return;
+  updateLogoAndFavicon();
+}, 1000);
 
 document.title = 'Kata';
 
@@ -54,4 +69,4 @@ onLangChange(renderLangSwitcher);
 
 const app = document.getElementById('app');
 const moduleTabsSlot = document.getElementById('module-tabs-slot');
-createModuleSwitcher(app, [gridIconsModule, mosaicModule], moduleTabsSlot, { onActivate: updateLogoAndFavicon });
+createModuleSwitcher(app, [gridIconsModule, mosaicModule, videoTilesModule], moduleTabsSlot, { onActivate: updateLogoAndFavicon });

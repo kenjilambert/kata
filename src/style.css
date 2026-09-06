@@ -2297,6 +2297,91 @@ body {
   border-radius: var(--radius-md);
 }
 
+/* módulo Vídeo — reaproveita o shell de painel-duplo do Mosaico (.mo-layout/
+   .mo-controls/.mo-stage, ver acima) sem prefixo próprio pra isso; só o que
+   é genuinamente novo (o preview de canvas, a fonte vídeo/webcam) ganha
+   classes com prefixo .vt-. */
+
+.vt-preview-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 560px;
+  aspect-ratio: 1;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: repeating-conic-gradient(rgba(255, 255, 255, 0.07) 0% 25%, rgba(255, 255, 255, 0.02) 0% 50%) 0 0 / 20px 20px;
+}
+
+.vt-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* mensagem "envie um vídeo ou ative a câmera" — cobre o preview inteiro
+   enquanto não existe fonte nenhuma; some sozinha assim que uma existe (ver
+   updateSourceHint em video-tiles/index.js), sem precisar reconstruir nada
+   ao redor. */
+.vt-source-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+  background: rgba(20, 18, 16, 0.55);
+  pointer-events: none;
+}
+
+.vt-source-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.vt-source-row .control-button {
+  flex: 1;
+}
+
+.vt-source-video {
+  /* nunca visível de verdade — o canvas é o que aparece — mas fica fora do
+     fluxo (não display:none) pra continuar decodificando quadros normalmente
+     (ver comentário em video-tiles/index.js). */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.vt-file-input {
+  /* disparado só pelo clique no botão "Enviar vídeo" (uploadInput.click())
+     — o <input type="file"> cru nunca precisa aparecer na tela. */
+  display: none;
+}
+
+.vt-error {
+  color: var(--accent);
+}
+
+/* botão de Gravar enquanto gravando: pulsa em vermelho (--accent) em vez do
+   estilo primary de sempre — reforço visual de "isso está ativo agora",
+   igual à ideia do ponto vermelho piscando de qualquer app de câmera. */
+.control-button.vt-recording {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  animation: vt-recording-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes vt-recording-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
 /* icon-select — mesmo visual do theme-combo (Azulejo), genérico: cada opção
    mostra o próprio ícone (renderIcon) em vez de bolinhas de cor fixas. */
 
