@@ -34,6 +34,32 @@ function computeGrid(resolution, ratio) {
 // na mesma proporção de cols/rows — assim uma célula sempre tem o mesmo
 // tamanho físico não importa o formato escolhido (mesma ideia do cellSize
 // em renderGridToSvg, grid-icons/generator.js).
+function hexToRgb(hex) {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+// interpola entre as N cores de um gradiente (em ORDEM — não pesos/sorteio
+// como paletteColors) conforme t (0-1, normalmente a luminância da célula):
+// t=0 cai bem na primeira cor, t=1 bem na última, valores no meio misturam
+// as duas cores vizinhas mais perto — como um gradiente de verdade, não uma
+// escolha discreta de "cor mais parecida" (ver nearestPaletteColor, usado
+// pelos outros modos de cor).
+function interpolateGradient(t, colors) {
+  if (!colors.length) return '#000000';
+  if (colors.length === 1) return colors[0].color;
+  const clamped = Math.min(1, Math.max(0, t));
+  const scaled = clamped * (colors.length - 1);
+  const i = Math.min(colors.length - 2, Math.floor(scaled));
+  const frac = scaled - i;
+  const [r1, g1, b1] = hexToRgb(colors[i].color);
+  const [r2, g2, b2] = hexToRgb(colors[i + 1].color);
+  const r = Math.round(r1 + (r2 - r1) * frac);
+  const g = Math.round(g1 + (g2 - g1) * frac);
+  const b = Math.round(b1 + (b2 - b1) * frac);
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
 function computeOutputSize(cols, rows, maxDim) {
   if (cols >= rows) {
     return { width: maxDim, height: Math.max(1, Math.round((maxDim * rows) / cols)) };
@@ -91,11 +117,13 @@ export function createVideoTilesEngine(outputCanvas) {
     cols: 0,
     rows: 0,
     shapeScale: 1,
-    colorMode: 'palette', // 'grayscale' | 'source' | 'palette'
+    colorMode: 'palette', // 'grayscale' | 'source' | 'palette' | 'custom' | 'gradient'
     inkColor: '#f5efe4',
     background: '#141210',
     invert: false,
     paletteColors: [],
+    customPaletteColors: [], // pool do modo "Paleta personalizada" — mesmo formato de paletteColors, mas independente do Azulejo
+    gradientColors: [], // paradas do modo "Gradiente", em ORDEM (ver interpolateGradient) — mesmo formato de paletteColors, só a ordem importa aqui
     shapesAllowed: [], // pool do modo "Variado" — normalmente as formas ativas no Azulejo (ver index.js)
     seed: randomSeed(),
     // rastro/eco: 0 = limpa o quadro anterior por completo (comportamento de
@@ -308,13 +336,21 @@ export function createVideoTilesEngine(outputCanvas) {
         // retângulo preto gigante). invert troca pro meio-tom clássico
         // (tinta no escuro, como impressão em papel branco).
         const base = options.invert ? 1 - luminance : luminance;
-        const scale = base * options.shapeScale;
+        // "Gradiente": a forma NUNCA cresce/encolhe pela luminância (fica
+        // sempre do tamanho de "Tamanho das formas") — quem reage à
+        // luminância é só a COR, deslizando pelo gradiente. Todo o resto
+        // continua sendo o meio-tom de sempre (forma cresce/some).
+        const scale = options.colorMode === 'gradient' ? options.shapeScale : base * options.shapeScale;
 
         let color;
-        if (options.colorMode === 'source') {
+        if (options.colorMode === 'gradient') {
+          color = interpolateGradient(base, options.gradientColors);
+        } else if (options.colorMode === 'source') {
           color = `rgb(${r8}, ${g8}, ${b8})`;
         } else if (options.colorMode === 'palette' && options.paletteColors.length) {
           color = nearestPaletteColor({ r: r8, g: g8, b: b8 }, options.paletteColors);
+        } else if (options.colorMode === 'custom' && options.customPaletteColors.length) {
+          color = nearestPaletteColor({ r: r8, g: g8, b: b8 }, options.customPaletteColors);
         } else {
           color = options.inkColor;
         }
@@ -437,7 +473,11 @@ export function createVideoTilesEngine(outputCanvas) {
   // amostra de pixels pra montar uma paleta que represente bem o que foi
   // capturado.
   function buildGifPalette() {
-    if (options.colorMode === 'source') {
+    // "gradiente" produz uma faixa CONTÍNUA de cores (interpolação), não um
+    // punhado discreto — trata igual ao modo "cores do vídeo" (escaneia uma
+    // amostra dos próprios quadros capturados pra montar a paleta), em vez
+    // de tentar adivinhar as cores de antemão.
+    if (options.colorMode === 'source' || options.colorMode === 'gradient') {
       const buckets = new Map();
       const sampleFrames = [gifFrames[0], gifFrames[Math.floor(gifFrames.length / 2)], gifFrames[gifFrames.length - 1]].filter(Boolean);
       for (const frame of sampleFrames) {
@@ -458,6 +498,9 @@ export function createVideoTilesEngine(outputCanvas) {
     }
     if (options.colorMode === 'palette' && options.paletteColors.length) {
       return [options.background, ...options.paletteColors.map((c) => c.color)];
+    }
+    if (options.colorMode === 'custom' && options.customPaletteColors.length) {
+      return [options.background, ...options.customPaletteColors.map((c) => c.color)];
     }
     return [options.background, options.inkColor];
   }

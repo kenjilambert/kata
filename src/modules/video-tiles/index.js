@@ -48,6 +48,22 @@ const videoState = {
   shapeScale: 1,
   colorMode: 'palette',
   inkColor: '#f5efe4',
+  // paleta própria do Espelho (modo "Paleta personalizada") — independente
+  // do patternState.colors do Azulejo, pra quem quiser uma paleta só pra
+  // esse efeito sem mexer na do Azulejo. Mesmo formato de patternState.colors
+  // ({color, weight}) só pra reaproveitar createColorSwatches sem adaptar nada.
+  customPaletteColors: [
+    { color: '#ea4530', weight: 1 },
+    { color: '#3aa1d8', weight: 1 },
+  ],
+  // paradas do modo "Gradiente", em ORDEM (a ordem é o que define o
+  // gradiente — ver interpolateGradient em engine.js). Padrão usa as
+  // próprias cores da marca (fundo escuro → vermelho → creme).
+  gradientColors: [
+    { color: '#141210', weight: 1 },
+    { color: '#ea4530', weight: 1 },
+    { color: '#f5efe4', weight: 1 },
+  ],
   invert: false,
   trail: 0,
   symmetry: 'none',
@@ -450,6 +466,8 @@ export const videoTilesModule = {
             { value: 'grayscale', label: t('videoColorModeGrayscale') },
             { value: 'source', label: t('videoColorModeSource') },
             { value: 'palette', label: t('videoColorModePalette') },
+            { value: 'custom', label: t('videoColorModeCustom') },
+            { value: 'gradient', label: t('videoColorModeGradient') },
           ],
           value: videoState.colorMode,
           onChange: (value) => {
@@ -506,6 +524,36 @@ export const videoTilesModule = {
           },
         });
         colorElements.push(rotateColorsButton.el);
+      }
+      if (videoState.colorMode === 'custom') {
+        // paleta própria do Espelho — mesmo controle (createColorSwatches),
+        // mas editando videoState.customPaletteColors, não o patternState
+        // compartilhado do Azulejo.
+        const customSwatches = createColorSwatches({
+          label: t('videoColorModeCustom'),
+          colors: videoState.customPaletteColors,
+          onChange: (colors) => {
+            videoState.customPaletteColors = colors;
+            applyOptionsAndMaybePalette();
+          },
+        });
+        colorElements.push(customSwatches.el);
+      }
+      if (videoState.colorMode === 'gradient') {
+        // mesmo controle de sempre, mas aqui a ORDEM das cores É o gradiente
+        // (não pesos de sorteio) — célula escura puxa pra primeira cor,
+        // clara puxa pra última, o meio interpola (ver interpolateGradient
+        // em engine.js). "Tamanho das formas" para de reagir à luminância
+        // nesse modo — quem reage é só a cor.
+        const gradientSwatches = createColorSwatches({
+          label: t('videoGradientLabel'),
+          colors: videoState.gradientColors,
+          onChange: (colors) => {
+            videoState.gradientColors = colors;
+            applyOptionsAndMaybePalette();
+          },
+        });
+        colorElements.push(gradientSwatches.el);
       }
       const bgRow = document.createElement('div');
       bgRow.className = 'control control-background-color';
