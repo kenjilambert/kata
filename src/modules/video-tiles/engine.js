@@ -1,25 +1,49 @@
 import { createRng, randomSeed } from '../../core/seed.js';
 import { nearestPaletteColor } from '../../core/imageSampling.js';
 import { encodeGif } from '../../core/gifEncoder.js';
+import { framedGridDims } from '../grid-icons/generator.js';
 import { drawVideoShape, VIDEO_SHAPES } from './shapes.js';
 
 // tamanho/duração do GIF deliberadamente menores que os do vídeo gravado
 // (.webm): um GIF decodifica TODOS os quadros crus na memória do
 // navegador/app de quem for abrir depois (sem streaming como vídeo de
 // verdade), então cada segundo a mais ou pixel a mais custa proporcionalmente
-// muito mais no arquivo final. 12fps/8s/360px já dá um GIF fluido o
-// suficiente pro efeito, num tamanho de arquivo razoável de compartilhar.
-const GIF_SIZE = 360;
+// muito mais no arquivo final. 12fps/8s/(até 360px no lado maior) já dá um
+// GIF fluido o suficiente pro efeito, num tamanho de arquivo razoável de
+// compartilhar.
+const GIF_MAX_DIM = 360;
 const GIF_FPS = 12;
 const GIF_MAX_SECONDS = 8;
 
-// tamanho "de referência" do canvas de saída (unidade lógica de desenho —
-// a tela mostra ele esticado via CSS width:100%, igual ao <svg> dos outros
-// módulos). Fixo em vez de acompanhar o tamanho real na tela: mudar o
-// tamanho do elemento não deveria mudar a nitidez/framerate da renderização.
-const OUTPUT_SIZE = 720;
+// tamanho "de referência" do canvas de saída, no lado MAIOR (o menor segue o
+// formato escolhido — ver computeOutputSize) — a tela mostra ele esticado
+// via CSS width:100%, igual ao <svg> dos outros módulos. Fixo em vez de
+// acompanhar o tamanho real na tela: mudar o tamanho do elemento não deveria
+// mudar a nitidez/framerate da renderização.
+const OUTPUT_MAX_DIM = 900;
 
-// motor do modo Vídeo: cuida da fonte (arquivo ou webcam), da amostragem de
+// cols×rows a partir de uma "resolução" (densidade, eixo menor) + a
+// proporção pedida (1 = quadrado, 16/9 = paisagem, 9/16 = story...) — MESMA
+// conta de framedGridDims (Azulejo), pros formatos ficarem fiéis às
+// proporções de vídeo de verdade em vez de espremer tudo num quadrado.
+function computeGrid(resolution, ratio) {
+  return framedGridDims(resolution, ratio);
+}
+
+// canvas final: o lado MAIOR sempre com maxDim px, o lado menor encolhido
+// na mesma proporção de cols/rows — assim uma célula sempre tem o mesmo
+// tamanho físico não importa o formato escolhido (mesma ideia do cellSize
+// em renderGridToSvg, grid-icons/generator.js).
+function computeOutputSize(cols, rows, maxDim) {
+  if (cols >= rows) {
+    return { width: maxDim, height: Math.max(1, Math.round((maxDim * rows) / cols)) };
+  }
+  return { width: Math.max(1, Math.round((maxDim * cols) / rows)), height: maxDim };
+}
+
+const CORNERS = ['tl', 'tr', 'br', 'bl'];
+
+// motor do modo Espelho: cuida da fonte (arquivo ou webcam), da amostragem de
 // cada quadro numa grade pequena (igual em espírito a sampleImageGrid, só
 // que rodando a cada quadro em vez de uma vez só numa imagem parada) e do
 // laço de desenho no canvas de saída. Devolvido como um objeto com métodos
@@ -28,8 +52,6 @@ const OUTPUT_SIZE = 720;
 // (vídeo/stream/loop), o resto (index.js) só chama os métodos.
 export function createVideoTilesEngine(outputCanvas) {
   const ctx = outputCanvas.getContext('2d', { willReadFrequently: false });
-  outputCanvas.width = OUTPUT_SIZE;
-  outputCanvas.height = OUTPUT_SIZE;
 
   // <video> nunca entra no DOM visível — só serve de fonte de quadros pro
   // canvas (arquivo enviado OU stream da webcam, nunca os dois ao mesmo
@@ -40,12 +62,18 @@ export function createVideoTilesEngine(outputCanvas) {
   video.loop = true;
 
   // canvas de amostragem: um quadro do vídeo inteiro vira UMA imagem
-  // pixelizada cols×cols (o próprio drawImage faz a redução/média de todos
+  // pixelizada cols×rows (o próprio drawImage faz a redução/média de todos
   // os pixels — é essencialmente um blur/mip barato, exatamente a base que
   // um efeito de dithering precisa). Reaproveitado entre quadros (só o
-  // tamanho muda quando a resolução muda) em vez de recriado toda hora.
+  // tamanho muda quando a resolução/formato muda) em vez de recriado toda hora.
   const sampleCanvas = document.createElement('canvas');
   const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
+
+  // canvas da gravação em GIF — sempre bem menor que o de exibição (ver
+  // GIF_MAX_DIM), mas seguindo o MESMO formato (cols/rows), então o GIF sai
+  // com a mesma proporção do preview, só menor.
+  const gifCanvas = document.createElement('canvas');
+  const gifCtx = gifCanvas.getContext('2d', { willReadFrequently: true });
 
   let sourceUrl = null;
   let webcamStream = null;
@@ -54,13 +82,14 @@ export function createVideoTilesEngine(outputCanvas) {
   let paused = false;
   let activeDeviceId = null;
 
-const CORNERS = ['tl', 'tr', 'br', 'bl'];
-
   let cellAssignments = null; // grade fixa de {shapeKey, orientation} por célula — ver rebuildCellShapesIfNeeded
-  let cellAssignmentsKey = ''; // "assinatura" (cols + pool de formas) da última grade construída
+  let cellAssignmentsKey = ''; // "assinatura" (cols/rows + pool de formas) da última grade construída
 
   const options = {
-    cols: 32,
+    resolution: 32, // densidade no eixo menor da grade — ver computeGrid
+    ratio: 1, // 1 = quadrado, 16/9 = paisagem, 9/16 = story... (ver EXPORT_FRAME_RATIOS, core/export.js)
+    cols: 0,
+    rows: 0,
     shapeScale: 1,
     shapeMode: 'mixed', // uma forma do catálogo (ver VIDEO_SHAPES), ou 'mixed'
     colorMode: 'palette', // 'grayscale' | 'source' | 'palette'
@@ -83,10 +112,10 @@ const CORNERS = ['tl', 'tr', 'br', 'bl'];
   function rebuildCellShapesIfNeeded() {
     const pool = options.shapeMode === 'mixed' ? (options.shapesAllowed.length ? options.shapesAllowed : VIDEO_SHAPES) : [options.shapeMode];
     // assinatura barata (não precisa de JSON.stringify pesado): tamanho da
-    // grade + o próprio pool, junto — muda sempre que a resolução muda OU o
-    // conjunto de formas disponível muda (troca de forma única, ou o Azulejo
-    // liga/desliga alguma forma enquanto o modo é "Variado").
-    const key = `${options.cols}|${pool.join(',')}`;
+    // grade + o próprio pool, junto — muda sempre que a resolução/formato
+    // muda OU o conjunto de formas disponível muda (troca de forma única,
+    // ou o Azulejo liga/desliga alguma forma enquanto o modo é "Variado").
+    const key = `${options.cols}x${options.rows}|${pool.join(',')}`;
     if (cellAssignments && cellAssignmentsKey === key) return;
     // fixo por célula (não sorteado de novo a cada quadro) — sorteio por
     // quadro faria cada célula "piscar" de forma diferente 30x/s, sem
@@ -98,7 +127,7 @@ const CORNERS = ['tl', 'tr', 'br', 'bl'];
     // buildIconGrid em grid-icons/generator.js).
     const rng = createRng(options.seed);
     cellAssignmentsKey = key;
-    cellAssignments = Array.from({ length: options.cols * options.cols }, () => ({
+    cellAssignments = Array.from({ length: options.cols * options.rows }, () => ({
       shapeKey: pool[Math.floor(rng() * pool.length)],
       orientation: CORNERS[Math.floor(rng() * CORNERS.length)],
     }));
@@ -106,13 +135,20 @@ const CORNERS = ['tl', 'tr', 'br', 'bl'];
 
   function setOptions(partial) {
     Object.assign(options, partial);
-    if (partial.cols) {
-      sampleCanvas.width = options.cols;
-      sampleCanvas.height = options.cols;
-    }
+    const { cols, rows } = computeGrid(options.resolution, options.ratio);
+    options.cols = cols;
+    options.rows = rows;
+    sampleCanvas.width = cols;
+    sampleCanvas.height = rows;
+    const out = computeOutputSize(cols, rows, OUTPUT_MAX_DIM);
+    outputCanvas.width = out.width;
+    outputCanvas.height = out.height;
+    const gifOut = computeOutputSize(cols, rows, GIF_MAX_DIM);
+    gifCanvas.width = gifOut.width;
+    gifCanvas.height = gifOut.height;
     rebuildCellShapesIfNeeded();
   }
-  setOptions({}); // aplica os tamanhos iniciais do sampleCanvas
+  setOptions({}); // aplica os tamanhos iniciais dos canvas
 
   function stopStream() {
     if (webcamStream) {
@@ -148,6 +184,11 @@ const CORNERS = ['tl', 'tr', 'br', 'bl'];
   async function enableWebcam(deviceId) {
     clearSource();
     const videoConstraints = deviceId ? { deviceId: { exact: deviceId } } : { facingMode: 'user' };
+    // erro daqui pra frente é responsabilidade de quem chamou (ver index.js)
+    // mostrar pra pessoa — não colocamos um try/catch aqui pra não esconder
+    // o tipo do erro (NotAllowedError, NotFoundError, NotReadableError...),
+    // que é justamente o que ajuda a diagnosticar por que a câmera não abriu
+    // num navegador específico (ex.: Brave com Shields bloqueando).
     webcamStream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false });
     activeDeviceId = deviceId ?? webcamStream.getVideoTracks()[0]?.getSettings?.().deviceId ?? null;
     video.srcObject = webcamStream;
@@ -175,13 +216,19 @@ const CORNERS = ['tl', 'tr', 'br', 'bl'];
   // decisão" é "espelhar de onde vem a cor": toda célula fora do quadrante
   // canônico (metade/quadrante superior-esquerdo) lê a cor de sua
   // equivalente DENTRO dele, em vez da própria posição — efeito
-  // caleidoscópio em cima do vídeo ao vivo.
-  function remapSampleCoord(r, c, cols, symmetry) {
+  // caleidoscópio em cima do vídeo ao vivo. "rotational" só gira de verdade
+  // numa grade QUADRADA (cols===rows) — trocar linha por coluna não faz
+  // sentido geométrico num retângulo, então formatos não-quadrados caem de
+  // volta pro mesmo resultado de "mirror-full" nesse modo.
+  function remapSampleCoord(r, c, cols, rows, symmetry) {
     if (symmetry === 'none') return [r, c];
-    const h = Math.floor(cols / 2);
-    if (symmetry === 'mirror-h') return [r, c < h ? c : cols - 1 - c];
-    if (symmetry === 'mirror-full') return [r < h ? r : cols - 1 - r, c < h ? c : cols - 1 - c];
+    const hc = Math.floor(cols / 2);
+    const hr = Math.floor(rows / 2);
+    if (symmetry === 'mirror-h') return [r, c < hc ? c : cols - 1 - c];
+    if (symmetry === 'mirror-full') return [r < hr ? r : rows - 1 - r, c < hc ? c : cols - 1 - c];
     if (symmetry === 'rotational') {
+      if (cols !== rows) return [r < hr ? r : rows - 1 - r, c < hc ? c : cols - 1 - c];
+      const h = hc;
       if (r < h && c < h) return [r, c];
       if (r < h) { const cp = c - h; return [h - 1 - cp, r]; }
       if (c < h) { const rp = r - h; return [c, h - 1 - rp]; }
@@ -193,14 +240,27 @@ const CORNERS = ['tl', 'tr', 'br', 'bl'];
   }
 
   function renderFrame() {
-    const cols = options.cols;
+    const { cols, rows } = options;
     if (!hasSource() || video.readyState < 2 || !video.videoWidth) return;
 
     const vw = video.videoWidth;
     const vh = video.videoHeight;
-    const side = Math.min(vw, vh);
-    const sx = (vw - side) / 2;
-    const sy = (vh - side) / 2;
+    // recorte central que casa com o formato pedido (cols/rows) — igual ao
+    // "object-fit: cover": se o vídeo é mais largo que o formato, corta dos
+    // lados (mantém a altura inteira); se é mais alto, corta em cima/embaixo.
+    const targetRatio = cols / rows;
+    const videoRatio = vw / vh;
+    let cw;
+    let ch;
+    if (videoRatio > targetRatio) {
+      ch = vh;
+      cw = vh * targetRatio;
+    } else {
+      cw = vw;
+      ch = vw / targetRatio;
+    }
+    const sx = (vw - cw) / 2;
+    const sy = (vh - ch) / 2;
     // espelha horizontalmente só a AMOSTRAGEM da webcam (não o arquivo
     // enviado) — sem isso a pessoa vê o próprio reflexo "invertido" (levanta
     // a mão direita, a tela mostra levantando a esquerda), que é
@@ -209,13 +269,16 @@ const CORNERS = ['tl', 'tr', 'br', 'bl'];
       sampleCtx.save();
       sampleCtx.translate(cols, 0);
       sampleCtx.scale(-1, 1);
-      sampleCtx.drawImage(video, sx, sy, side, side, 0, 0, cols, cols);
+      sampleCtx.drawImage(video, sx, sy, cw, ch, 0, 0, cols, rows);
       sampleCtx.restore();
     } else {
-      sampleCtx.drawImage(video, sx, sy, side, side, 0, 0, cols, cols);
+      sampleCtx.drawImage(video, sx, sy, cw, ch, 0, 0, cols, rows);
     }
 
-    const { data } = sampleCtx.getImageData(0, 0, cols, cols);
+    const { data } = sampleCtx.getImageData(0, 0, cols, rows);
+
+    const outW = outputCanvas.width;
+    const outH = outputCanvas.height;
 
     // rastro/eco: em vez de apagar o quadro anterior por completo, cobre com
     // o fundo em opacidade parcial — o que sobrar "por baixo" (o desenho do
@@ -223,15 +286,15 @@ const CORNERS = ['tl', 'tr', 'br', 'bl'];
     // mantém o comportamento de sempre (opacidade 1 = limpeza total).
     ctx.globalAlpha = 1 - Math.min(0.95, Math.max(0, options.trail));
     ctx.fillStyle = options.background;
-    ctx.fillRect(0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
+    ctx.fillRect(0, 0, outW, outH);
     ctx.globalAlpha = 1;
 
-    const cellSize = OUTPUT_SIZE / cols;
+    const cellSize = outW / cols; // === outH / rows, já que o canvas de saída segue a mesma proporção da grade
     rebuildCellShapesIfNeeded();
 
-    for (let r = 0; r < cols; r++) {
+    for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
-        const [sr, sc] = remapSampleCoord(r, c, cols, options.symmetry);
+        const [sr, sc] = remapSampleCoord(r, c, cols, rows, options.symmetry);
         const i = (sr * cols + sc) * 4;
         const r8 = data[i];
         const g8 = data[i + 1];
@@ -333,20 +396,21 @@ const CORNERS = ['tl', 'tr', 'br', 'bl'];
   }
 
   // --- gravação em GIF --------------------------------------------------
-  // captura periódica de quadros JÁ REDUZIDOS (GIF_SIZE, bem menor que o
-  // OUTPUT_SIZE de exibição) num canvas próprio à parte — bem mais barato
-  // que guardar quadros no tamanho de tela inteiro, e o resultado final é
-  // um GIF, que nunca precisou da resolução cheia mesmo.
-  const gifCanvas = document.createElement('canvas');
-  gifCanvas.width = GIF_SIZE;
-  gifCanvas.height = GIF_SIZE;
-  const gifCtx = gifCanvas.getContext('2d', { willReadFrequently: true });
+  // captura periódica de quadros JÁ REDUZIDOS (gifCanvas, bem menor que o
+  // canvas de exibição) — bem mais barato que guardar quadros no tamanho de
+  // tela inteiro, e o resultado final é um GIF, que nunca precisou da
+  // resolução cheia mesmo. Guarda também as dimensões DO MOMENTO em que a
+  // gravação começou (gifRecordingSize) — se a pessoa trocar de formato no
+  // meio da gravação, os quadros já capturados continuam consistentes entre
+  // si em vez de misturar tamanhos diferentes no mesmo GIF.
   let gifTimerId = null;
   let gifFrames = null;
+  let gifRecordingSize = null;
 
   function captureGifFrame() {
-    gifCtx.drawImage(outputCanvas, 0, 0, GIF_SIZE, GIF_SIZE);
-    gifFrames.push(gifCtx.getImageData(0, 0, GIF_SIZE, GIF_SIZE).data);
+    const { width, height } = gifRecordingSize;
+    gifCtx.drawImage(outputCanvas, 0, 0, width, height);
+    gifFrames.push(gifCtx.getImageData(0, 0, width, height).data);
     if (gifFrames.length >= GIF_FPS * GIF_MAX_SECONDS) stopGifRecording();
   }
 
@@ -357,6 +421,7 @@ const CORNERS = ['tl', 'tr', 'br', 'bl'];
   function startGifRecording() {
     if (isGifRecording()) return;
     gifFrames = [];
+    gifRecordingSize = { width: gifCanvas.width, height: gifCanvas.height };
     gifTimerId = setInterval(captureGifFrame, 1000 / GIF_FPS);
   }
 
@@ -399,7 +464,8 @@ const CORNERS = ['tl', 'tr', 'br', 'bl'];
     gifTimerId = null;
     if (!gifFrames.length) return Promise.resolve(null);
     const palette = buildGifPalette();
-    const blob = encodeGif({ width: GIF_SIZE, height: GIF_SIZE, frames: gifFrames, palette, delayCs: Math.round(100 / GIF_FPS) });
+    const { width, height } = gifRecordingSize;
+    const blob = encodeGif({ width, height, frames: gifFrames, palette, delayCs: Math.round(100 / GIF_FPS) });
     gifFrames = null;
     return Promise.resolve(blob);
   }
@@ -439,12 +505,16 @@ const CORNERS = ['tl', 'tr', 'br', 'bl'];
     renderFrame,
     destroy,
     getCanvas: () => outputCanvas,
+    // cols/rows reais da grade AGORA (depois de framedGridDims já ter
+    // arredondado) — quem monta a UI usa isso pra ajustar o aspect-ratio do
+    // preview certinho, em vez de recalcular a mesma conta duas vezes.
+    getGridSize: () => ({ cols: options.cols, rows: options.rows }),
   };
 
   // quadro "vazio" (só o fundo) — mostrado assim que a fonte é removida, em
   // vez de deixar o último quadro do vídeo congelado no canvas pra sempre.
   function renderIdleFrame() {
     ctx.fillStyle = options.background;
-    ctx.fillRect(0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
+    ctx.fillRect(0, 0, outputCanvas.width, outputCanvas.height);
   }
 }

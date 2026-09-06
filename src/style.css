@@ -343,10 +343,18 @@ body {
   color: var(--accent-text);
 }
 
-.module-tab-disabled {
-  /* vermelho da marca (--accent) em vez do cinza apagado de sempre — mas
-     com opacidade reduzida, pra não parecer clicável/ativa igual as abas
-     de verdade (que são o mesmo vermelho só que em pílula sólida). */
+.module-tabs .module-tab-disabled {
+  /* seletor com .module-tabs na frente (não só .module-tab-disabled
+     sozinho) de propósito: a regra-base ".module-tabs button,
+     .module-tab-disabled" lá em cima tem a MESMA especificidade que um
+     ".module-tab-disabled" sozinho — empate que o navegador resolve a
+     favor da regra de cima (mais cedo no arquivo, mas com uma leitura de
+     especificidade que não estava vencendo aqui). Descendente
+     ".module-tabs .module-tab-disabled" tem especificidade maior de
+     verdade, então ganha sem depender de posição no arquivo.
+     Vermelho da marca (--accent) em vez do cinza apagado de sempre, com
+     opacidade reduzida pra não parecer clicável/ativa igual as abas de
+     verdade (que são o mesmo vermelho só que em pílula sólida). */
   color: var(--accent);
   opacity: 0.7;
   cursor: not-allowed;
@@ -2308,9 +2316,20 @@ body {
 
 .vt-preview-wrap {
   position: relative;
+  /* sem max-width fixo (era 560px) — a ideia é preencher a largura toda que
+     o stage já reserva pro preview, igual o Azulejo/Mosaico fazem, em vez de
+     sobrar uma moldura enorme vazia ao redor de um vídeo minúsculo. */
   width: 100%;
-  max-width: 560px;
+  /* aspect-ratio: 1 é só o valor INICIAL (antes do JS calcular o formato de
+     verdade a partir de cols/rows) — sobrescrito por applyOptionsAndMaybePalette
+     em video-tiles/index.js assim que a aba monta. */
   aspect-ratio: 1;
+  /* max-width real (px) é recalculado via JS a cada formato (ver
+     applyOptionsAndMaybePalette) — combinar aspect-ratio com só max-height
+     no CSS deixaria a altura contida mas a LARGURA continuaria em 100%,
+     esticando/cortando o canvas em formatos bem verticais (story 9:16); o
+     JS calcula um max-width em px que já respeita as duas travas (largura
+     do stage E altura da tela) ao mesmo tempo. */
   border-radius: var(--radius-md);
   overflow: hidden;
   background: repeating-conic-gradient(rgba(255, 255, 255, 0.07) 0% 25%, rgba(255, 255, 255, 0.02) 0% 50%) 0 0 / 20px 20px;

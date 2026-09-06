@@ -2,14 +2,32 @@ import { t, onLangChange } from '../../core/i18n.js';
 import { createSlider } from '../../ui/controls/slider.js';
 import { createSelect } from '../../ui/controls/select.js';
 import { createToggleSwitch } from '../../ui/controls/toggleSwitch.js';
+import { createFrameTilePicker } from '../../ui/controls/frameTilePicker.js';
 import { createButton, flashExportSuccess } from '../../ui/controls/button.js';
 import { createSection } from '../../ui/controls/section.js';
-import { downloadBlob } from '../../core/export.js';
+import { downloadBlob, EXPORT_FRAME_RATIOS } from '../../core/export.js';
 import { patternState } from '../../core/patternState.js';
 import { SYMMETRY_VALUES } from '../../core/symmetry.js';
 import { SHAPES } from '../grid-icons/shapes.js';
+import { framedGridDims } from '../grid-icons/generator.js';
 import { VIDEO_SHAPES } from './shapes.js';
 import { createVideoTilesEngine } from './engine.js';
+
+// mesmas 4 opções do seletor "Formato" do Azulejo (ver frameTileOptions em
+// grid-icons/index.js) — reaproveitadas ao pé da letra (mesmo componente
+// visual, createFrameTilePicker) pra ficar fiel às proporções reais de
+// vídeo mais comuns (quadrado, retrato de feed, story/reels, paisagem).
+// Função (não uma lista fixa) pelo mesmo motivo de lá: os rótulos (label)
+// precisam ler t() de novo a cada troca de idioma, não travar no que
+// existia quando o módulo carregou.
+function frameOptions() {
+  return [
+    { value: 'square', ratio: EXPORT_FRAME_RATIOS.square, label: t('exportFrame_square'), caption: '1:1' },
+    { value: 'portrait', ratio: EXPORT_FRAME_RATIOS.portrait, label: t('exportFrame_portrait'), caption: '4:5' },
+    { value: 'story', ratio: EXPORT_FRAME_RATIOS.story, label: t('exportFrame_story'), caption: '9:16' },
+    { value: 'landscape', ratio: EXPORT_FRAME_RATIOS.landscape, label: t('exportFrame_landscape'), caption: '16:9' },
+  ];
+}
 
 // prévia de cada forma na grade de "Forma" — mesmo espírito da grade de
 // ícones do Azulejo (shapeToggleGrid.js): cada opção mostra o próprio
@@ -36,7 +54,11 @@ function renderShapePreviewSvg(shapeKey) {
 // estado só do modo Vídeo — mesmo espírito do mosaicState (mosaic/index.js):
 // vive no escopo do módulo, sobrevive a trocar de aba e voltar.
 const videoState = {
-  cols: 32,
+  resolution: 32,
+  // formato/proporção real — 'square' por padrão, mesmas 4 opções do
+  // seletor de Formato do Azulejo (ver frameOptions acima).
+  format: 'square',
+  ratio: EXPORT_FRAME_RATIOS.square,
   shapeScale: 1,
   // "mixed" + "palette" por padrão — replica de cara o mesmo azulejo (formas
   // e cores) que já está configurado na aba Azulejo, igual o Mosaico faz,
@@ -50,8 +72,6 @@ const videoState = {
   trail: 0,
   symmetry: 'none',
 };
-
-const SHAPE_OPTIONS = [...VIDEO_SHAPES, 'mixed'];
 
 let cleanupLang = null;
 let engine = null;
@@ -121,6 +141,20 @@ export const videoTilesModule = {
         paletteColors: patternState.colors,
         shapesAllowed: patternState.shapesAllowed,
       });
+      // o preview segue o formato ESCOLHIDO (retrato/story/paisagem não são
+      // quadrados) — cols/rows já vêm arredondados pelo motor (framedGridDims),
+      // então o aspect-ratio do preview usa exatamente os mesmos números da
+      // grade, sem repetir a conta aqui.
+      const { cols, rows } = engine.getGridSize();
+      previewWrap.style.aspectRatio = `${cols} / ${rows}`;
+      // limita a LARGURA (não só a altura) num formato bem vertical (story
+      // 9:16): só travar max-height deixaria width:100% esticando/cortando
+      // o canvas, já que aspect-ratio sozinho não "encolhe de volta" a
+      // largura quando a altura bate no teto. Calculando o max-width em px
+      // a partir da altura disponível (78% da viewport) as duas travas
+      // (largura do stage E altura da tela) valem ao mesmo tempo.
+      const maxWidthFromHeight = window.innerHeight * 0.78 * (cols / rows);
+      previewWrap.style.maxWidth = `${Math.round(maxWidthFromHeight)}px`;
     }
 
     function updateSourceHint() {
@@ -213,7 +247,7 @@ export const videoTilesModule = {
           try {
             await engine.enableWebcam(deviceId);
           } catch (err) {
-            errorMsg.textContent = t('videoWebcamError');
+            errorMsg.textContent = `${t('videoWebcamError')} (${err?.name || err?.message || err})`;
             errorMsg.hidden = false;
           }
         },
@@ -238,10 +272,15 @@ export const videoTilesModule = {
         updateSourceHint();
         refreshCameraSelect();
       });
-      const uploadButton = createButton({ label: t('videoUploadButton'), onClick: () => uploadInput.click() });
+      const uploadButton = createButton({
+        label: t('videoUploadButton'),
+        variant: 'accent2',
+        onClick: () => uploadInput.click(),
+      });
 
       webcamButton = createButton({
         label: t('videoWebcamButton'),
+        variant: 'primary',
         onClick: async () => {
           const labelEl = webcamButton.el.querySelector('.control-button-label');
           if (engine.isWebcamActive()) {
@@ -258,7 +297,14 @@ export const videoTilesModule = {
             updateSourceHint();
             refreshCameraSelect();
           } catch (err) {
-            errorMsg.textContent = t('videoWebcamError');
+            // mostra o motivo REAL (err.name — NotAllowedError, NotFoundError,
+            // NotReadableError, SecurityError...) junto da mensagem, não só um
+            // "não foi possível" genérico — é o que ajuda a diferenciar
+            // "permissão negada" de "nenhuma câmera encontrada" de "outro app
+            // já está usando a câmera", que pedem soluções bem diferentes
+            // (alguns navegadores, como o Brave, bloqueiam por padrão via
+            // Shields, mesmo depois de aceitar o prompt do site).
+            errorMsg.textContent = `${t('videoWebcamError')} (${err?.name || err?.message || err})`;
             errorMsg.hidden = false;
           }
         },
@@ -275,16 +321,40 @@ export const videoTilesModule = {
       // reconstruída do zero) mesmo com a webcam continuando ativa por trás.
       refreshCameraSelect();
 
+      const framePicker = createFrameTilePicker({
+        options: frameOptions(),
+        value: videoState.format,
+        onChange: (value) => {
+          videoState.format = value;
+          videoState.ratio = EXPORT_FRAME_RATIOS[value];
+          // reconstrói a sidebar inteira (não só aplica as opções) — o
+          // rótulo do slider de Resolução mostra "colsxrows" calculado a
+          // partir do ratio (ver formatValue mais abaixo); sem recriar o
+          // slider, ele ficava mostrando o par antigo até a próxima vez que
+          // a pessoa arrastasse o próprio slider.
+          buildSidebar();
+          applyOptionsAndMaybePalette();
+        },
+      });
+      sidebar.appendChild(createSection(t('formatSectionTitle'), [framePicker.el]));
+
       const gridElements = [
         createSlider({
           label: t('videoResolutionLabel'),
           min: 8,
           max: 96,
           step: 1,
-          value: videoState.cols,
-          formatValue: (v) => `${v}×${v}`,
+          value: videoState.resolution,
+          // calcula cols×rows na hora (mesma conta do motor, framedGridDims)
+          // em vez de ler o que o motor já aplicou — assim o número mostrado
+          // acompanha o dedo arrastando o slider sem ficar 1 passo atrasado
+          // (onChange só dispara depois que o rótulo já foi atualizado).
+          formatValue: (v) => {
+            const { cols, rows } = framedGridDims(v, videoState.ratio);
+            return `${cols}×${rows}`;
+          },
           onChange: (value) => {
-            videoState.cols = value;
+            videoState.resolution = value;
             applyOptionsAndMaybePalette();
           },
         }).el,
@@ -311,6 +381,20 @@ export const videoTilesModule = {
       ];
       sidebar.appendChild(createSection(t('videoGridSection'), gridElements));
 
+      // só as formas que já estão ATIVAS no Azulejo (patternState.shapesAllowed)
+      // + "Variado" — herda a escolha de lá em vez de oferecer o catálogo
+      // inteiro (20 formas) independente do que a pessoa já configurou.
+      // Vazio (Azulejo nunca montado ainda) cai de volta pro catálogo
+      // inteiro, só pra nunca mostrar a grade de opções vazia.
+      const availableShapes = patternState.shapesAllowed.length ? patternState.shapesAllowed : VIDEO_SHAPES;
+      const shapeChipOptions = [...availableShapes, 'mixed'];
+      // se a forma selecionada não está mais disponível (a pessoa desligou
+      // ela no Azulejo enquanto isso), volta pro "Variado" em vez de ficar
+      // com uma seleção que não aparece mais na grade.
+      if (videoState.shapeMode !== 'mixed' && !availableShapes.includes(videoState.shapeMode)) {
+        videoState.shapeMode = 'mixed';
+      }
+
       const shapeWrap = document.createElement('div');
       shapeWrap.className = 'control control-shape-grid';
       const shapeLabelSpan = document.createElement('span');
@@ -319,7 +403,7 @@ export const videoTilesModule = {
       shapeWrap.appendChild(shapeLabelSpan);
       const shapeRow = document.createElement('div');
       shapeRow.className = 'shape-toggle-row';
-      SHAPE_OPTIONS.forEach((shapeKey) => {
+      shapeChipOptions.forEach((shapeKey) => {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'shape-toggle';
