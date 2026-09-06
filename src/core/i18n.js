@@ -7,6 +7,7 @@ const STRINGS = {
     comingSoonTab: 'Em breve',
     resultTitle: 'Resultado',
     fineControlLabel: 'Controle fino de blocos (arraste, gire com a rodinha do mouse, botão direito pra trocar a cor)',
+    fineControlLabelShort: 'Editar',
 
     referenceImageLabel: 'Referência de imagem',
     uploadImage: 'Enviar imagem',
@@ -31,6 +32,13 @@ const STRINGS = {
     presetNamePlaceholder: 'Nome do preset',
     savePresetButton: 'Salvar',
     deletePreset: 'Remover preset',
+    shareCodeSectionTitle: 'Compartilhar',
+    copyCodeButton: 'Copiar código',
+    copyCodeButtonCopied: 'Copiado!',
+    copyCodeButtonError: 'Falhou',
+    pasteCodePlaceholder: 'Cole um código aqui',
+    loadCodeButton: 'Carregar código',
+    loadCodeButtonError: 'Código inválido',
 
     structureSection: 'Grade',
     resolutionLabel: 'Resolução',
@@ -95,6 +103,7 @@ const STRINGS = {
     colorImageLabel: 'Imagem para cor',
     removeColor: 'Remover cor',
     addColor: 'Adicionar cor',
+    rotateColorsButton: 'Girar cores',
 
     harmonySectionTitle: 'Gerar paleta a partir de 1 cor',
     harmonyBaseColorLabel: 'Cor base',
@@ -111,6 +120,15 @@ const STRINGS = {
     luckyButton: 'Estou com sorte',
     exportSvgButton: 'Exportar SVG',
     exportPngButton: 'Exportar PNG',
+    // título da categoria "Exportar" no menu mobile (ver isMobileViewport,
+    // grid-icons/index.js) — agrupa os 2 botões acima, que no mobile só
+    // aparecem quando essa aba está selecionada (não mais em toda aba).
+    exportSectionTitle: 'Exportar',
+    exportFrameLabel: 'Formato de exportação',
+    exportFrame_square: 'Quadrado (1:1)',
+    exportFrame_portrait: 'Retrato (4:5)',
+    exportFrame_story: 'Story (9:16)',
+    exportFrame_landscape: 'Paisagem (16:9)',
     variationsLabel: 'Variações',
     historyLabel: 'Histórico',
 
@@ -199,6 +217,7 @@ const STRINGS = {
     comingSoonTab: 'Coming soon',
     resultTitle: 'Result',
     fineControlLabel: 'Fine block control (drag, rotate with mouse wheel, right-click to recolor)',
+    fineControlLabelShort: 'Edit',
 
     referenceImageLabel: 'Reference image',
     uploadImage: 'Upload image',
@@ -223,6 +242,13 @@ const STRINGS = {
     presetNamePlaceholder: 'Preset name',
     savePresetButton: 'Save',
     deletePreset: 'Remove preset',
+    shareCodeSectionTitle: 'Share',
+    copyCodeButton: 'Copy code',
+    copyCodeButtonCopied: 'Copied!',
+    copyCodeButtonError: 'Failed',
+    pasteCodePlaceholder: 'Paste a code here',
+    loadCodeButton: 'Load code',
+    loadCodeButtonError: 'Invalid code',
 
     structureSection: 'Grid',
     resolutionLabel: 'Resolution',
@@ -287,6 +313,7 @@ const STRINGS = {
     colorImageLabel: 'Image for color',
     removeColor: 'Remove color',
     addColor: 'Add color',
+    rotateColorsButton: 'Rotate colors',
 
     harmonySectionTitle: 'Generate palette from 1 color',
     harmonyBaseColorLabel: 'Base color',
@@ -303,6 +330,12 @@ const STRINGS = {
     luckyButton: "I'm feeling lucky",
     exportSvgButton: 'Export SVG',
     exportPngButton: 'Export PNG',
+    exportSectionTitle: 'Export',
+    exportFrameLabel: 'Export format',
+    exportFrame_square: 'Square (1:1)',
+    exportFrame_portrait: 'Portrait (4:5)',
+    exportFrame_story: 'Story (9:16)',
+    exportFrame_landscape: 'Landscape (16:9)',
     variationsLabel: 'Variations',
     historyLabel: 'History',
 

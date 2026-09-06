@@ -1,6 +1,10 @@
-export function createSection(title, elements, { collapsed = false, onToggleCollapse, onRandomize } = {}) {
+export function createSection(title, elements, { collapsed = false, onToggleCollapse, onRandomize, id } = {}) {
   const wrap = document.createElement('div');
   wrap.className = 'control-section';
+  // id estável usado no mobile pra montar a aba de categorias (ver
+  // .gi-mobile-category-tabs em style.css e grid-icons/index.js) — sem
+  // isso o CSS não teria como mostrar só a seção da aba ativa.
+  if (id) wrap.dataset.sectionId = id;
 
   const header = document.createElement('div');
   header.className = 'control-section-header';

@@ -1,5 +1,5 @@
 import { PRESETS, clonePreset } from '../../core/palette.js';
-import { hslToHex, generateHarmoniousPalette } from '../../core/color.js';
+import { hexToHsl, hslToHex, generateHarmoniousPalette } from '../../core/color.js';
 import { randomSeed } from '../../core/seed.js';
 import {
   patternState,
@@ -8,7 +8,7 @@ import {
   markPatternStateInitialized,
 } from '../../core/patternState.js';
 import { SYMMETRY_VALUES } from '../../core/symmetry.js';
-import { exportSvgString, exportPngFromSvgString } from '../../core/export.js';
+import { exportSvgString, exportPngFromSvgString, EXPORT_FRAME_RATIOS } from '../../core/export.js';
 import { listenForPaste, loadImageAsset } from '../../core/clipboard-input.js';
 import { openDrawCanvas } from '../../ui/drawCanvas.js';
 import { extractPaletteFromBlob } from '../../core/imagePalette.js';
@@ -22,9 +22,14 @@ import { createShapeToggleGrid } from '../../ui/controls/shapeToggleGrid.js';
 import { createToggleSwitch } from '../../ui/controls/toggleSwitch.js';
 import { createButton } from '../../ui/controls/button.js';
 import { createSection } from '../../ui/controls/section.js';
+import { createFrameTilePicker } from '../../ui/controls/frameTilePicker.js';
+import { CATEGORY_ICONS } from '../../ui/categoryIcons.js';
+import { TOOLBAR_ICONS } from '../../ui/toolbarIcons.js';
 import { SHAPES } from './shapes.js';
 import {
   generateIcon,
+  generateFramedIcon,
+  framedGridDims,
   buildIconGrid,
   renderGridToSvg,
   buildCustomShapeDefs as buildCustomShapeDefsFromList,
@@ -73,6 +78,8 @@ let cleanupLang = null;
 let cleanupThemeDropdown = null;
 let cleanupColorMenu = null;
 let cleanupPaletteSwapSelect = null;
+let cleanupKeyboardShortcuts = null;
+let cleanupFrameResize = null;
 
 function randomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -120,29 +127,57 @@ export const gridIconsModule = {
     // evita ter que renomear as centenas de usos existentes no resto do arquivo.
     const state = patternState;
     const history = patternHistory;
-    // tudo recolhido ao entrar/voltar pra aba, exceto Tema — a sidebar
-    // inteira aberta de cara é overwhelming pra quem não é programador.
+    // tudo aberto por padrão ao entrar/voltar pra aba, em qualquer tamanho
+    // de tela — a ideia de começar tudo recolhido (só pra descobrir
+    // clicando) acabou escondendo os próprios ajustes de quem visita o
+    // site pela primeira vez; melhor deixar tudo à vista de cara. No
+    // mobile isso já valia (calculado 1x no mount — não muda se a pessoa
+    // girar a tela ou redimensionar depois); agora vale igual no desktop.
+    const isMobileViewport = window.matchMedia('(max-width: 768px)').matches;
     const collapsedSections = {
-      reference: true,
-      grid: true,
-      detail: true,
-      fill: true,
-      gradient: true,
-      shapes: true,
-      colors: true,
-      harmony: true,
-      appearance: true,
-      presets: true,
+      reference: false,
+      grid: false,
+      detail: false,
+      fill: false,
+      gradient: false,
+      shapes: false,
+      colors: false,
+      harmony: false,
+      appearance: false,
+      presets: false,
+      share: false,
     };
     let savedPresets = loadSavedPresets();
     let themeDropdownOpen = false;
     let selectedGradientStopIndex = 0;
+    // formato de exportação do PNG (o SVG sempre sai quadrado) — só
+    // interessa na hora de exportar, não faz parte da "receita" do ícone,
+    // então fica fora do state/snapshot (não polui presets nem histórico).
+    let exportFrame = 'square';
+    // guarda o ícone "cru" (sempre quadrado 1:1, o resultado editável de
+    // sempre) — nunca muda com o "Formato de exportação".
+    let currentIconSvg = '';
+    // já com o "Formato de exportação" aplicado — igual a currentIconSvg
+    // quando o formato é quadrado; nos outros formatos é uma composição
+    // própria gerada por generateFramedIcon (ver updatePreviewFrame). É o
+    // que os botões de exportar (SVG/PNG) usam de verdade.
+    let currentFramedIconSvg = '';
 
     function handleDocumentClickForThemeDropdown(e) {
       if (!themeDropdownOpen) return;
       const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
       const insideCombo = path.some((node) => node instanceof Element && node.classList?.contains('theme-combo'));
       if (!insideCombo) {
+        themeDropdownOpen = false;
+        buildSidebar();
+      }
+    }
+
+    // Esc fecha o dropdown de tema aberto — sem isso, um usuário de
+    // teclado só conseguia fechar clicando fora (o clique fora já é
+    // tratado acima), sem atalho nenhum pra quem não usa mouse.
+    function handleDocumentKeydownForThemeDropdown(e) {
+      if (e.key === 'Escape' && themeDropdownOpen) {
         themeDropdownOpen = false;
         buildSidebar();
       }
@@ -164,7 +199,11 @@ export const gridIconsModule = {
     // não zera fillEnabled/strokeEnabled/strokeColor sozinho, então sem isso
     // o valor ATUAL (de antes de aplicar o preset) vazaria por cima.
     function normalizeFillStrokeFields(snapshot) {
-      if (!('strokeOutlineWidth' in snapshot)) state.strokeOutlineWidth = 2;
+      if (!('strokeOutlineWidth' in snapshot)) state.strokeOutlineWidth = 1;
+      // presets/histórico antigos podiam ter espessura de até 6 (faixa antiga
+      // do controle) — o controle atual vai só até 1.5, então recorta pra não
+      // deixar um valor fora do alcance do slider parado no estado.
+      state.strokeOutlineWidth = Math.min(1.5, state.strokeOutlineWidth ?? 1);
       if (!('gradientStops' in snapshot)) {
         state.gradientStops = [
           { position: 0, color: '#c1502e' },
@@ -180,16 +219,23 @@ export const gridIconsModule = {
       state.grainEnabled = false;
     }
 
-    function applyPreset(preset) {
+    // usado tanto por presets salvos (applyPreset) quanto pelo código
+    // compartilhável (ver seção "Compartilhar") — os dois carregam o mesmo
+    // formato de snapshot (buildBaseSnapshot), só a origem dele muda.
+    function applySnapshot(snapshot) {
       pushToHistory();
-      Object.assign(state, preset.snapshot);
-      state.colors = preset.snapshot.colors.map((c) => ({ ...c }));
-      state.shapesAllowed = [...preset.snapshot.shapesAllowed];
-      state.customShapes = preset.snapshot.customShapes.map((s) => ({ ...s }));
-      normalizeFillStrokeFields(preset.snapshot);
+      Object.assign(state, snapshot);
+      state.colors = snapshot.colors.map((c) => ({ ...c }));
+      state.shapesAllowed = [...snapshot.shapesAllowed];
+      state.customShapes = snapshot.customShapes.map((s) => ({ ...s }));
+      normalizeFillStrokeFields(snapshot);
       refreshGridOverrideIfEditing();
       buildSidebar();
       render();
+    }
+
+    function applyPreset(preset) {
+      applySnapshot(preset.snapshot);
     }
 
     function deletePreset(id) {
@@ -200,7 +246,11 @@ export const gridIconsModule = {
 
     function sectionOptions(id, onRandomize) {
       return {
-        collapsed: !!collapsedSections[id],
+        id,
+        // no mobile a seção não colapsa mais sozinha — ver
+        // .gi-mobile-category-tabs: lá é a aba de categoria que decide
+        // qual seção aparece, não o chevron de cada uma.
+        collapsed: isMobileViewport ? false : !!collapsedSections[id],
         onToggleCollapse: (collapsed) => {
           collapsedSections[id] = collapsed;
         },
@@ -229,7 +279,7 @@ export const gridIconsModule = {
       state.strokeEnabled = theme.strokeEnabled ?? theme.fillMode === 'outline';
       state.strokeColor = theme.strokeColor ?? state.strokeColor ?? '#000000';
       state.strokeWidth = theme.strokeWidth ?? 0.24;
-      state.strokeOutlineWidth = theme.strokeOutlineWidth ?? 2;
+      state.strokeOutlineWidth = theme.strokeOutlineWidth ?? 1;
       state.gradientFillEnabled = theme.gradientFillEnabled ?? false;
       state.gradientFillAngle = theme.gradientFillAngle ?? 45;
       // sem receita definida no tema: usa as 2 primeiras cores da paleta dele
@@ -303,7 +353,7 @@ export const gridIconsModule = {
       state.strokeWidth = randomFloat(0.1, 0.36);
       if (state.strokeEnabled) {
         state.strokeColor = hslToHex(randomFloat(0, 360), randomInt(20, 90), randomInt(10, 40));
-        state.strokeOutlineWidth = randomFloat(1, 4);
+        state.strokeOutlineWidth = randomFloat(0.3, 1.5);
       }
       state.gradientFillEnabled = state.fillEnabled && Math.random() < 0.5;
       if (state.gradientFillEnabled) {
@@ -413,12 +463,19 @@ export const gridIconsModule = {
     preview.className = 'gi-preview';
     previewWrap.appendChild(preview);
 
+    // agora mora ao lado da trilha de abas Resultado/Variações/Histórico
+    // (não mais numa faixa própria acima do preview) — legenda inteira
+    // (com a explicação do gesto de arraste) não cabe mais ali em nenhum
+    // tamanho de tela, então é sempre "Editar" curto; a explicação completa
+    // continua acessível via aria-label (leitor de tela) e title (tooltip
+    // ao passar o mouse, no desktop).
     const gridEditToggleRow = createToggleSwitch({
-      label: t('fineControlLabel'),
+      label: t('fineControlLabelShort'),
       value: state.gridEditEnabled,
       onChange: setGridEditEnabled,
     });
     gridEditToggleRow.el.classList.add('gi-grid-edit-toggle');
+    gridEditToggleRow.el.title = t('fineControlLabel');
 
     function createCollapsibleGallerySection(labelKey, row) {
       const header = document.createElement('div');
@@ -457,46 +514,166 @@ export const gridIconsModule = {
     const historyLabel = historySection.label;
     const variationsLabel = variationsSection.label;
 
+    // agrupados num wrapper cada (em vez de soltos direto dentro de
+    // .gi-gallery) só pra ter um seletor estável — no mobile, cada bloco
+    // vira o conteúdo de uma aba própria (Variações / Histórico), ver
+    // .gi-mobile-tabs em style.css.
+    const variationsBlock = document.createElement('div');
+    variationsBlock.className = 'gi-gallery-block gi-gallery-block--variations';
+    variationsBlock.appendChild(variationsSection.header);
+    variationsBlock.appendChild(variationsRow);
+
+    const historyBlock = document.createElement('div');
+    historyBlock.className = 'gi-gallery-block gi-gallery-block--history';
+    historyBlock.appendChild(historySection.header);
+    historyBlock.appendChild(historyRow);
+
     const gallery = document.createElement('div');
     gallery.className = 'gi-gallery';
-    gallery.appendChild(variationsSection.header);
-    gallery.appendChild(variationsRow);
-    gallery.appendChild(historySection.header);
-    gallery.appendChild(historyRow);
+    gallery.appendChild(variationsBlock);
+    gallery.appendChild(historyBlock);
 
     const stageToolbar = document.createElement('div');
     stageToolbar.className = 'gi-stage-toolbar';
 
-    const regenerateButton = createButton({
-      label: t('regenerateButton'),
-      variant: 'primary',
-      onClick: () => {
-        pushToHistory();
-        state.seed = randomSeed();
-        refreshGridOverrideIfEditing();
-        render();
-      },
-    });
+    // nomeadas (em vez de inline) pra poder reaproveitar a MESMA ação nos
+    // dois formatos de botão: a pílula com texto (.gi-stage-toolbar, ainda
+    // como está no desktop) e a trilha de ícones (.gi-stage-toolbar-rail,
+    // só no mobile — ver mais abaixo).
+    function handleRegenerate() {
+      pushToHistory();
+      state.seed = randomSeed();
+      refreshGridOverrideIfEditing();
+      render();
+    }
+    function handleShowVariations() {
+      renderVariations();
+    }
+    function handleLucky() {
+      randomizeAll();
+    }
 
-    const variationsButton = createButton({
-      label: t('variationsButton'),
-      onClick: () => renderVariations(),
-    });
-
-    const luckyButton = createButton({
-      label: t('luckyButton'),
-      onClick: () => randomizeAll(),
-    });
+    const regenerateButton = createButton({ label: t('regenerateButton'), variant: 'primary', onClick: handleRegenerate });
+    const variationsButton = createButton({ label: t('variationsButton'), onClick: handleShowVariations });
+    const luckyButton = createButton({ label: t('luckyButton'), onClick: handleLucky });
 
     stageToolbar.appendChild(regenerateButton.el);
     stageToolbar.appendChild(variationsButton.el);
     stageToolbar.appendChild(luckyButton.el);
 
-    stage.appendChild(resultTitle);
-    stage.appendChild(gridEditToggleRow.el);
-    stage.appendChild(previewWrap);
-    stage.appendChild(stageToolbar);
-    stage.appendChild(gallery);
+    // no mobile, os mesmos 3 botões viram ícones numa trilha vertical à
+    // ESQUERDA do preview (em vez de pílulas com texto embaixo dele) — dá
+    // mais altura livre pro painel de ajustes logo abaixo (ver
+    // .gi-stage-toolbar-rail/.gi-preview-row em style.css; a pílula com
+    // texto continua existindo no DOM pro desktop, só fica display:none
+    // no mobile).
+    function createToolbarRailButton(iconSvg, label, variant, onClick) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'gi-toolbar-rail-button' + (variant === 'primary' ? ' gi-toolbar-rail-button-primary' : '');
+      btn.innerHTML = iconSvg;
+      btn.title = label;
+      btn.setAttribute('aria-label', label);
+      btn.addEventListener('click', onClick);
+      return btn;
+    }
+
+    const toolbarRail = document.createElement('div');
+    toolbarRail.className = 'gi-stage-toolbar-rail';
+    const regenerateRailButton = createToolbarRailButton(
+      TOOLBAR_ICONS.regenerate,
+      t('regenerateButton'),
+      'primary',
+      handleRegenerate
+    );
+    const variationsRailButton = createToolbarRailButton(
+      TOOLBAR_ICONS.variations,
+      t('variationsButton'),
+      'default',
+      handleShowVariations
+    );
+    const luckyRailButton = createToolbarRailButton(TOOLBAR_ICONS.lucky, t('luckyButton'), 'default', handleLucky);
+    toolbarRail.appendChild(regenerateRailButton);
+    toolbarRail.appendChild(variationsRailButton);
+    toolbarRail.appendChild(luckyRailButton);
+
+    // aba "Resultado / Variações / Histórico" — no desktop vira uma trilha
+    // vertical à direita do preview; no mobile, uma barra de pílulas em
+    // cima (ver .gi-stage-tabs em style.css — mesmo markup, só a posição/
+    // orientação muda por CSS). Só um dos 3 blocos aparece por vez, via
+    // :has() (ver .gi-stage:has(#gi-stage-tab-... :checked) em style.css) —
+    // funciona independente de onde a trilha esteja no DOM.
+    const stageTabs = document.createElement('div');
+    stageTabs.className = 'gi-stage-tabs';
+
+    function createStageTabInput(id, checked) {
+      const input = document.createElement('input');
+      input.type = 'radio';
+      input.name = 'gi-stage-tab';
+      input.id = id;
+      input.className = 'gi-stage-tabs-input';
+      input.checked = checked;
+      return input;
+    }
+
+    function createStageTabLabel(forId, text) {
+      const label = document.createElement('label');
+      label.htmlFor = forId;
+      label.className = 'gi-stage-tabs-label';
+      label.textContent = text;
+      return label;
+    }
+
+    const resultTabInput = createStageTabInput('gi-stage-tab-result', true);
+    const variationsTabInput = createStageTabInput('gi-stage-tab-variations', false);
+    const historyTabInput = createStageTabInput('gi-stage-tab-history', false);
+
+    const resultTabLabel = createStageTabLabel(resultTabInput.id, t('resultTitle'));
+    const variationsTabLabel = createStageTabLabel(variationsTabInput.id, t('variationsLabel'));
+    const historyTabLabel = createStageTabLabel(historyTabInput.id, t('historyLabel'));
+
+    stageTabs.append(
+      resultTabInput,
+      resultTabLabel,
+      variationsTabInput,
+      variationsTabLabel,
+      historyTabInput,
+      historyTabLabel
+    );
+
+    // trilha de abas + toggle "Editar" numa linha só — no mobile isso evita
+    // 2 faixas separadas empilhadas (aba embaixo, editar mais embaixo ainda)
+    // comendo altura antes mesmo do preview aparecer; no desktop o toggle
+    // continua junto da trilha vertical, ao lado do preview.
+    const stageTabsRow = document.createElement('div');
+    stageTabsRow.className = 'gi-stage-tabs-row';
+    stageTabsRow.appendChild(stageTabs);
+    stageTabsRow.appendChild(gridEditToggleRow.el);
+
+    // "Resultado" (preview + botões) agrupado num wrapper próprio — junto
+    // com .gi-gallery, são os 2 "conteúdos" possíveis da área principal; a
+    // aba decide qual dos dois aparece.
+    // trilha de ícones (mobile) + preview lado a lado — no desktop
+    // .gi-stage-toolbar-rail fica display:none (a pílula com texto embaixo
+    // do preview continua sendo o que aparece lá, sem mudança nenhuma).
+    const previewRow = document.createElement('div');
+    previewRow.className = 'gi-preview-row';
+    previewRow.appendChild(toolbarRail);
+    previewRow.appendChild(previewWrap);
+
+    const resultBlock = document.createElement('div');
+    resultBlock.className = 'gi-result-block';
+    resultBlock.appendChild(resultTitle);
+    resultBlock.appendChild(previewRow);
+    resultBlock.appendChild(stageToolbar);
+
+    const stageContent = document.createElement('div');
+    stageContent.className = 'gi-stage-content';
+    stageContent.appendChild(resultBlock);
+    stageContent.appendChild(gallery);
+
+    stage.appendChild(stageTabsRow);
+    stage.appendChild(stageContent);
 
     function buildCustomShapeDefs() {
       return buildCustomShapeDefsFromList(state.customShapes);
@@ -715,11 +892,18 @@ export const gridIconsModule = {
       if (colorMenuEl && !colorMenuEl.contains(e.target)) closeColorMenu();
     }
 
+    // Esc fecha o menu de cor/forma (aberto com botão direito ou toque
+    // longo num bloco) — antes só fechava clicando fora.
+    function handleColorMenuKeydown(e) {
+      if (e.key === 'Escape') closeColorMenu();
+    }
+
     function closeColorMenu() {
       if (!colorMenuEl) return;
       colorMenuEl.remove();
       colorMenuEl = null;
       document.removeEventListener('pointerdown', handleColorMenuOutsideClick, true);
+      document.removeEventListener('keydown', handleColorMenuKeydown, true);
     }
 
     // botão direito num bloco (com o controle de blocos ligado) abre um
@@ -771,8 +955,26 @@ export const gridIconsModule = {
       menu.style.top = `${y}px`;
       document.body.appendChild(menu);
       colorMenuEl = menu;
+
+      // em telas estreitas o menu (aberto na posição do toque/clique) pode
+      // estourar a borda da viewport — reposiciona pra dentro sem mudar o
+      // transform que centraliza ele no ponto de abertura.
+      const margin = 8;
+      const rect = menu.getBoundingClientRect();
+      let dx = 0;
+      let dy = 0;
+      if (rect.left < margin) dx = margin - rect.left;
+      else if (rect.right > window.innerWidth - margin) dx = window.innerWidth - margin - rect.right;
+      if (rect.top < margin) dy = margin - rect.top;
+      else if (rect.bottom > window.innerHeight - margin) dy = window.innerHeight - margin - rect.bottom;
+      if (dx || dy) {
+        menu.style.left = `${x + dx}px`;
+        menu.style.top = `${y + dy}px`;
+      }
+
       // adia um tick pra não fechar o menu com o mesmo clique que abriu ele
       setTimeout(() => document.addEventListener('pointerdown', handleColorMenuOutsideClick, true), 0);
+      document.addEventListener('keydown', handleColorMenuKeydown, true);
     }
 
     let gridEditorOverlayEl = null;
@@ -806,34 +1008,71 @@ export const gridIconsModule = {
         const sourceCell = state.gridOverride[r][c];
         const boxSize = overlay.clientWidth / size;
         let rotationDelta = 0;
+        let ghost = null;
+        let dragStarted = false;
+        let longPressTimer = null;
+        const startX = e.clientX;
+        const startY = e.clientY;
+        // no touch não existe botão direito pra abrir o menu de cor/forma —
+        // um toque longo parado (sem arrastar) abre o mesmo menu do
+        // contextmenu. No mouse o arraste começa no primeiro movimento, sem
+        // essa espera (DRAG_THRESHOLD abaixo cobre os dois casos).
+        const isTouch = e.pointerType === 'touch';
+        const DRAG_THRESHOLD = 6;
+        const LONG_PRESS_MS = 450;
 
-        const ghost = document.createElement('div');
-        ghost.className = 'gi-grid-drag-ghost';
-        ghost.style.width = `${boxSize}px`;
-        ghost.style.height = `${boxSize}px`;
-        ghost.innerHTML = ghostCellSvg(sourceCell, rotationDelta, boxSize);
-        document.body.appendChild(ghost);
-        moveGhost(e.clientX, e.clientY);
+        function beginDrag() {
+          if (dragStarted) return;
+          dragStarted = true;
+          clearLongPress();
+          ghost = document.createElement('div');
+          ghost.className = 'gi-grid-drag-ghost';
+          ghost.style.width = `${boxSize}px`;
+          ghost.style.height = `${boxSize}px`;
+          ghost.innerHTML = ghostCellSvg(sourceCell, rotationDelta, boxSize);
+          document.body.appendChild(ghost);
+          moveGhost(startX, startY);
+        }
 
         function moveGhost(x, y) {
+          if (!ghost) return;
           ghost.style.left = `${x}px`;
           ghost.style.top = `${y}px`;
         }
+        function clearLongPress() {
+          if (longPressTimer) {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+          }
+        }
         function onMove(ev) {
+          if (!dragStarted) {
+            const dx = ev.clientX - startX;
+            const dy = ev.clientY - startY;
+            if (Math.hypot(dx, dy) <= DRAG_THRESHOLD) return;
+            beginDrag();
+          }
           moveGhost(ev.clientX, ev.clientY);
         }
         function onWheel(ev) {
+          if (!dragStarted) return;
           ev.preventDefault();
           // giros inteiros de 90° só — em ângulos quebrados a forma (quadrada)
           // estoura a caixa da célula e o SVG corta as pontas na borda do viewBox.
           rotationDelta += ev.deltaY > 0 ? 90 : -90;
           ghost.innerHTML = ghostCellSvg(sourceCell, rotationDelta, boxSize);
         }
-        function onUp(ev) {
+        function cleanup() {
           window.removeEventListener('pointermove', onMove);
           window.removeEventListener('pointerup', onUp);
+          window.removeEventListener('pointercancel', onUp);
           window.removeEventListener('wheel', onWheel);
-          ghost.remove();
+          clearLongPress();
+          if (ghost) ghost.remove();
+        }
+        function onUp(ev) {
+          cleanup();
+          if (!dragStarted) return;
           const target = document.elementFromPoint(ev.clientX, ev.clientY);
           const targetCellEl = target && target.closest('.gi-grid-editor-cell');
           if (targetCellEl) {
@@ -846,7 +1085,16 @@ export const gridIconsModule = {
         }
         window.addEventListener('pointermove', onMove);
         window.addEventListener('pointerup', onUp);
+        window.addEventListener('pointercancel', onUp);
         window.addEventListener('wheel', onWheel, { passive: false });
+
+        if (isTouch) {
+          longPressTimer = setTimeout(() => {
+            if (dragStarted) return;
+            cleanup();
+            openColorMenu(startX, startY, r, c);
+          }, LONG_PRESS_MS);
+        }
       }
 
       return overlay;
@@ -858,9 +1106,37 @@ export const gridIconsModule = {
         gridEditorOverlayEl.remove();
         gridEditorOverlayEl = null;
       }
-      if (!state.gridEditEnabled) return;
+      // o controle de blocos edita células da grade QUADRADA (state.
+      // gridOverride, sempre resolution×resolution) — num formato não-
+      // quadrado o preview mostra uma composição GERADA fresca, do
+      // tamanho certo (ver generateFramedIcon em generator.js), não mais
+      // aquela grade repetida; não tem mais um "bloco" 1-pra-1 pra editar
+      // ali. Só mostra o overlay no formato quadrado.
+      if (!state.gridEditEnabled || exportFrame !== 'square') return;
       gridEditorOverlayEl = buildGridEditorOverlay();
       previewWrap.appendChild(gridEditorOverlayEl);
+      updateGridEditorOverlayGeometry();
+    }
+
+    // o controle de blocos só existe no formato quadrado (ver
+    // syncGridEditorOverlay — formatos não-quadrados mostram uma
+    // composição GERADA fresca, sem um "bloco" 1-pra-1 editável), então
+    // aqui o overlay sempre cobre o preview inteiro. boxW/boxH (opcionais)
+    // são o tamanho ALVO que updatePreviewFrame acabou de calcular — .gi-
+    // preview-wrap tem transition de width/height (0.35s), então ler
+    // getBoundingClientRect() logo depois de mudar o estilo pega o
+    // tamanho NO MEIO da animação, não o final; sem os parâmetros, a
+    // geometria do overlay ficava um passo atrasada. Só cai no
+    // getBoundingClientRect() (settled) quando chamada fora de
+    // updatePreviewFrame — ver syncGridEditorOverlay, ao ligar o controle.
+    function updateGridEditorOverlayGeometry(boxW, boxH) {
+      if (!gridEditorOverlayEl) return;
+      const wrapRect =
+        boxW != null && boxH != null ? { width: boxW, height: boxH } : previewWrap.getBoundingClientRect();
+      gridEditorOverlayEl.style.top = '0px';
+      gridEditorOverlayEl.style.left = '0px';
+      gridEditorOverlayEl.style.width = `${wrapRect.width}px`;
+      gridEditorOverlayEl.style.height = `${wrapRect.height}px`;
     }
 
     function render() {
@@ -876,11 +1152,163 @@ export const gridIconsModule = {
         else clearGridOverride();
       }
       if (state.gridOverride) {
-        preview.innerHTML = renderGridToSvg({ ...iconParams(state.seed, ICON_SIZE), grid: state.gridOverride });
+        currentIconSvg = renderGridToSvg({ ...iconParams(state.seed, ICON_SIZE), grid: state.gridOverride });
       } else {
-        preview.innerHTML = iconSvg(state.seed);
+        currentIconSvg = iconSvg(state.seed);
       }
+      preview.innerHTML = currentIconSvg;
       syncGridEditorOverlay();
+      updatePreviewFrame();
+    }
+
+    // tamanho (em px) que o preview pode ocupar sem estourar a tela — nunca
+    // só um teto de largura (540px): numa proporção alta/estreita (Story
+    // 9:16, por ex.) um preview de 540px de largura ia querer 960px de
+    // altura, o que sobrava pra fora da viewport e escondia Variações/
+    // Histórico embaixo. Mede a posição real do preview na tela (depois do
+    // layout) e limita pela altura que ainda cabe até o fim da viewport,
+    // encolhendo a largura junto (mantendo a proporção) quando precisa.
+    function computePreviewBoxSize(ratio) {
+      // no desktop a trilha de abas (Resultado/Variações/Histórico) fica ao
+      // LADO do preview, na mesma linha (.gi-stage em row) — sem reservar a
+      // largura dela aqui, o preview tomava a largura toda do stage pra si
+      // e a trilha ficava espremida/cortada pra fora da tela (.gi-stage tem
+      // overflow:hidden). No mobile ela fica numa linha própria em cima
+      // (.gi-stage em column), não disputa largura com o preview.
+      const stageIsRow = getComputedStyle(stage).flexDirection === 'row';
+      const stageGap = parseFloat(getComputedStyle(stage).gap) || 0;
+      const tabsReserved = stageIsRow ? stageTabsRow.getBoundingClientRect().width + stageGap : 0;
+      // no mobile a trilha de ícones (Novo azulejo/Criar variações/Estou
+      // com sorte) fica ao LADO do preview, não embaixo — mesmo motivo da
+      // trilha de abas acima: sem reservar a largura dela, o preview
+      // tomava o espaço todo e a trilha ficava espremida.
+      const railReserved = !stageIsRow ? toolbarRail.getBoundingClientRect().width + 10 : 0;
+      const maxW = Math.max(160, Math.min(540, (stage.clientWidth || 540) - tabsReserved - railReserved));
+
+      const top = previewWrap.getBoundingClientRect().top || 0;
+      // margem generosa (não só a altura atual da toolbar): o texto dos
+      // botões pode crescer depois desse cálculo — troca de idioma, ou a
+      // fonte (Space Grotesk) terminando de carregar depois do primeiro
+      // render — e sem folga sobrava só o suficiente pro tamanho de ANTES,
+      // cortando os botões debaixo do preview quando a toolbar cresce.
+      const belowReserved = stageToolbar.offsetHeight + 80;
+      // no mobile (.gi-stage em coluna) o preview e a sidebar de ajustes
+      // disputam a MESMA altura de tela — sem reservar um mínimo pra
+      // sidebar aqui, um preview quadrado grande podia tomar quase a tela
+      // inteira num celular com pouca altura (ou navegador "baixo"), e o
+      // painel de ajustes (com o menu de categorias, ver .gi-mobile-
+      // category-tabs) sobrava espremido a uns 40-50px de altura — sticky
+      // não ajuda se o CONTAINER dele já não tem altura nenhuma: o menu
+      // ficava parcialmente (ou totalmente) fora da tela, sem como rolar
+      // até ele (body é overflow:hidden). No desktop a sidebar é uma
+      // coluna ao LADO do preview (não compete por altura), por isso só
+      // reserva isso quando .gi-stage está em coluna.
+      const controlsMinHeight = stageIsRow ? 0 : 310;
+      const maxH = Math.max(160, window.innerHeight - top - belowReserved - controlsMinHeight);
+      let w = maxW;
+      let h = w / ratio;
+      if (h > maxH) {
+        h = maxH;
+        w = h * ratio;
+      }
+      return { w: Math.round(w), h: Math.round(h) };
+    }
+
+    // reflete o "Formato de exportação" no preview de verdade, ao vivo — o
+    // espaço extra NUNCA fica vazio, mas também não é preenchido repetindo
+    // (ladrilhando) o ícone quadrado: isso deixava uma "costura" visível a
+    // cada repetição e cortava forma ao meio sempre que a proporção não
+    // batia com um múltiplo exato do ícone (o pedido explícito era "os
+    // shapes sempre têm que estar INTEIROS"). Em vez disso, formatos não-
+    // quadrados geram uma composição PRÓPRIA, do tamanho certo, esticando
+    // a MESMA grade em mais colunas (paisagem) ou mais linhas (retrato) —
+    // ver generateFramedIcon em generator.js. A transição suave de
+    // tamanho é só CSS (ver .gi-preview-wrap em style.css).
+    function updatePreviewFrame() {
+      const nominalRatio = EXPORT_FRAME_RATIOS[exportFrame] ?? 1;
+      // a proporção pedida (nominalRatio, ex.: 4:5 exato) quase nunca cai
+      // num número inteiro de colunas/linhas — a composição de verdade
+      // (ver generateFramedIcon) usa a proporção REAL que sobra depois de
+      // arredondar pra célula inteira (ex.: 0.75, não 0.8). Dimensionar a
+      // caixa do preview pela nominal cortava um lado (ou sobrava vazio
+      // do outro) porque a caixa e o conteúdo tinham proporções
+      // ligeiramente diferentes — aqui sempre usa a REAL, então a caixa
+      // bate exatamente com o que a composição realmente é.
+      const ratio = nominalRatio === 1 ? 1 : (() => {
+        const { cols, rows } = framedGridDims(state.resolution, nominalRatio);
+        return cols / rows;
+      })();
+      const { w, h } = computePreviewBoxSize(ratio);
+      previewWrap.style.width = `${w}px`;
+      previewWrap.style.height = `${h}px`;
+      // a pílula de botões embaixo do preview (Novo azulejo/Criar
+      // variações/Estou com sorte) tinha um max-width fixo (540px),
+      // independente do preview de verdade — quando o preview encolhia
+      // (janela baixa, formato retrato/story, etc.) a pílula continuava do
+      // tamanho de sempre e ficava enorme/desproporcional do lado de um
+      // preview pequeno. Essa variável deixa a largura MÁXIMA da pílula
+      // sempre acompanhando a largura atual do preview (ver
+      // .gi-stage-toolbar em style.css).
+      stage.style.setProperty('--gi-preview-w', `${w}px`);
+      previewWrap.style.background = state.transparentBg ? '' : state.background || '';
+      preview.style.width = '100%';
+      preview.style.height = '100%';
+      currentFramedIconSvg =
+        ratio === 1 ? currentIconSvg : generateFramedIcon(iconParams(state.seed, ICON_SIZE), ratio);
+      preview.innerHTML = currentFramedIconSvg;
+      // o controle de blocos só existe no formato quadrado (ver
+      // syncGridEditorOverlay) — se essa condição mudou desde a última vez
+      // (trocou de/para quadrado), precisa criar ou remover o overlay de
+      // verdade; senão (só o tamanho mudou, ex. redimensionar a janela)
+      // basta reposicionar o que já existe, sem recriar.
+      const shouldShowOverlay = state.gridEditEnabled && exportFrame === 'square';
+      if (shouldShowOverlay !== !!gridEditorOverlayEl) {
+        syncGridEditorOverlay();
+      } else {
+        updateGridEditorOverlayGeometry(w, h);
+      }
+    }
+
+    // opções do seletor de formato — usadas tanto pela barra própria do
+    // desktop (buildFrameBar) quanto pela seção "Formato" que, no mobile,
+    // vive junto das outras categorias de ajuste (ver isMobileViewport lá
+    // embaixo, perto de onde a barra de categorias é montada).
+    function frameTileOptions() {
+      return [
+        { value: 'square', ratio: EXPORT_FRAME_RATIOS.square, label: t('exportFrame_square'), caption: '1:1' },
+        { value: 'portrait', ratio: EXPORT_FRAME_RATIOS.portrait, label: t('exportFrame_portrait'), caption: '4:5' },
+        { value: 'story', ratio: EXPORT_FRAME_RATIOS.story, label: t('exportFrame_story'), caption: '9:16' },
+        { value: 'landscape', ratio: EXPORT_FRAME_RATIOS.landscape, label: t('exportFrame_landscape'), caption: '16:9' },
+      ];
+    }
+
+    function onFrameChange(value) {
+      exportFrame = value;
+      updatePreviewFrame();
+    }
+
+    // fica FORA da sidebar, num menu próprio em cima de tudo — é a config
+    // mais importante (afeta como o export sai), não devia ficar escondida
+    // dentro de uma dúzia de outras seções. Só no desktop — no mobile o
+    // formato virou só mais uma categoria de ajuste junto das outras (ver
+    // isMobileViewport perto da barra de categorias), não fica mais separado
+    // num menu próprio acima da sidebar. Chamado 1x no mount e de novo na
+    // troca de idioma (os rótulos de cada opção são traduzidos).
+    function buildFrameBar() {
+      const bar = document.createElement('div');
+      bar.className = 'gi-frame-bar';
+      // sem título visível (só os ícones, ver createFrameTilePicker) — o
+      // aria-label mantém isso identificável pra quem usa leitor de tela.
+      bar.setAttribute('aria-label', t('exportFrameLabel'));
+
+      const picker = createFrameTilePicker({
+        options: frameTileOptions(),
+        value: exportFrame,
+        onChange: onFrameChange,
+      });
+
+      bar.appendChild(picker.el);
+      return bar;
     }
 
     function renderVariations() {
@@ -950,6 +1378,30 @@ export const gridIconsModule = {
         blackIcon: state.blackIcon,
         invertColors: state.invertColors,
       };
+    }
+
+    // "código" compartilhável = o mesmo snapshot dos presets, só que
+    // codificado como texto (base64 de um JSON) em vez de salvo no
+    // localStorage — dá pra copiar/colar/mandar por mensagem sem precisar
+    // de link nem servidor (o app inteiro já roda só no navegador).
+    function encodeShareCode(snapshot) {
+      try {
+        return btoa(encodeURIComponent(JSON.stringify(snapshot)));
+      } catch (err) {
+        return null;
+      }
+    }
+
+    function decodeShareCode(code) {
+      try {
+        const snapshot = JSON.parse(decodeURIComponent(atob(code.trim())));
+        // checagem mínima — um texto qualquer colado ali não deveria
+        // conseguir passar por "snapshot válido" e quebrar o resto do app.
+        if (!snapshot || typeof snapshot !== 'object' || !Array.isArray(snapshot.colors)) return null;
+        return snapshot;
+      } catch (err) {
+        return null;
+      }
     }
 
     function revokeUrlUnlessInHistory(url) {
@@ -1681,9 +2133,9 @@ export const gridIconsModule = {
 
         const strokeWidthSlider = createSlider({
           label: t('strokeWidthLabel'),
-          min: 1,
-          max: 6,
-          step: 0.5,
+          min: 0.3,
+          max: 1.5,
+          step: 0.1,
           value: state.strokeOutlineWidth,
           formatValue: (v) => `${v}px`,
           onChange: (value) => {
@@ -1960,6 +2412,24 @@ export const gridIconsModule = {
         },
       });
 
+      // gira o matiz de cada cor da paleta atual por um passo fixo — uma
+      // variação rápida de 1 clique só, sem abrir seletor de cor nenhum
+      // (diferente de "gerar paleta a partir de 1 cor", que troca tudo).
+      const ROTATE_COLORS_HUE_STEP = 30;
+      const rotateColorsButton = createButton({
+        label: t('rotateColorsButton'),
+        onClick: () => {
+          pushToHistory();
+          state.colors = state.colors.map((entry) => {
+            const { h, s, l } = hexToHsl(entry.color);
+            return { ...entry, color: hslToHex(h + ROTATE_COLORS_HUE_STEP, s, l) };
+          });
+          state.themeKey = 'custom';
+          buildSidebar();
+          render();
+        },
+      });
+
       const backgroundColorWrap = document.createElement('div');
       backgroundColorWrap.className = 'control control-background-color';
       const backgroundColorLabel = document.createElement('span');
@@ -1978,7 +2448,12 @@ export const gridIconsModule = {
       backgroundColorWrap.appendChild(backgroundColorLabel);
       backgroundColorWrap.appendChild(backgroundColorInput);
 
-      const colorsSectionElements = [paletteSwapSelect.el, colorSwatches.el, backgroundColorWrap];
+      const colorsSectionElements = [
+        paletteSwapSelect.el,
+        colorSwatches.el,
+        rotateColorsButton.el,
+        backgroundColorWrap,
+      ];
 
       if (state.structureImageEl) {
         const sameImageToggle = createToggleSwitch({
@@ -2184,29 +2659,198 @@ export const gridIconsModule = {
         createSection(t('presetsSectionTitle'), presetElements, sectionOptions('presets'))
       );
 
-      // --- Ações ---
+      // --- Compartilhar (código copiável, mesmo "conteúdo" de um preset,
+      // sem precisar salvar nada — bom pra mandar uma composição específica
+      // pra alguém sem precisar exportar arquivo) ---
+      function flashButtonText(button, text, revertTo) {
+        button.el.textContent = text;
+        setTimeout(() => {
+          button.el.textContent = revertTo;
+        }, 1500);
+      }
+
+      const copyCodeButton = createButton({
+        label: t('copyCodeButton'),
+        onClick: async () => {
+          const code = encodeShareCode(buildBaseSnapshot());
+          if (!code) return;
+          try {
+            await navigator.clipboard.writeText(code);
+            flashButtonText(copyCodeButton, t('copyCodeButtonCopied'), t('copyCodeButton'));
+          } catch (err) {
+            flashButtonText(copyCodeButton, t('copyCodeButtonError'), t('copyCodeButton'));
+          }
+        },
+      });
+
+      const pasteCodeInput = document.createElement('input');
+      pasteCodeInput.type = 'text';
+      pasteCodeInput.className = 'preset-name-input';
+      pasteCodeInput.placeholder = t('pasteCodePlaceholder');
+
+      const loadCodeButton = createButton({
+        label: t('loadCodeButton'),
+        onClick: () => {
+          const snapshot = decodeShareCode(pasteCodeInput.value);
+          if (!snapshot) {
+            flashButtonText(loadCodeButton, t('loadCodeButtonError'), t('loadCodeButton'));
+            return;
+          }
+          applySnapshot(snapshot);
+          pasteCodeInput.value = '';
+        },
+      });
+
+      const pasteCodeRow = document.createElement('div');
+      pasteCodeRow.className = 'preset-save-row';
+      pasteCodeRow.appendChild(pasteCodeInput);
+      pasteCodeRow.appendChild(loadCodeButton.el);
+
+      sidebar.appendChild(
+        createSection(
+          t('shareCodeSectionTitle'),
+          [copyCodeButton.el, pasteCodeRow],
+          sectionOptions('share')
+        )
+      );
+
+      // --- Ações (exportar) — continua no fim da sidebar, do jeito de
+      // sempre. O seletor de formato mora fora da sidebar agora (ver
+      // buildFrameBar, chamado 1x no mount + de novo na troca de idioma). ---
       const exportSvgButton = createButton({
         label: t('exportSvgButton'),
         variant: 'primary',
-        onClick: () => exportSvgString(preview.innerHTML, `icone-${state.themeKey}.svg`),
+        onClick: () =>
+          // currentFramedIconSvg já é a composição final (quadrada OU a
+          // gerada pro formato escolhido, ver updatePreviewFrame) — não
+          // precisa mais nenhuma moldura/repetição aplicada por cima aqui.
+          exportSvgString(currentFramedIconSvg, `icone-${state.themeKey}.svg`, {
+            background: state.transparentBg ? null : state.background,
+          }),
       });
 
       const exportPngButton = createButton({
         label: t('exportPngButton'),
         variant: 'primary',
-        onClick: () => exportPngFromSvgString(preview.innerHTML, `icone-${state.themeKey}.png`),
+        onClick: async () => {
+          try {
+            await exportPngFromSvgString(currentFramedIconSvg, `icone-${state.themeKey}.png`, {
+              background: state.transparentBg ? null : state.background,
+            });
+          } catch (err) {
+            // sem isso, uma falha (ex.: navegador bloqueando canvas/blob)
+            // não dava sinal nenhum pra quem clicou — parecia que o botão
+            // simplesmente não fazia nada.
+            const original = t('exportPngButton');
+            exportPngButton.el.textContent = t('copyCodeButtonError');
+            setTimeout(() => {
+              exportPngButton.el.textContent = original;
+            }, 2000);
+          }
+        },
       });
 
-      const actions = document.createElement('div');
-      actions.className = 'gi-actions';
-      actions.appendChild(exportSvgButton.el);
-      actions.appendChild(exportPngButton.el);
+      // no mobile os botões de exportar viram só mais uma categoria de
+      // ajuste (igual "Formato") — antes ficavam soltos direto na sidebar
+      // (fora do sistema de abas), então apareciam repetidos embaixo de
+      // TODA categoria aberta, não só quando fazia sentido. No desktop
+      // continuam soltos no fim da sidebar, do jeito de sempre.
+      if (isMobileViewport) {
+        sidebar.appendChild(
+          createSection(t('exportSectionTitle'), [exportSvgButton.el, exportPngButton.el], sectionOptions('export'))
+        );
+      } else {
+        const actions = document.createElement('div');
+        actions.className = 'gi-actions';
+        actions.appendChild(exportSvgButton.el);
+        actions.appendChild(exportPngButton.el);
+        sidebar.appendChild(actions);
+      }
 
-      sidebar.appendChild(actions);
+      // --- aba de categorias (só no mobile) ---
+      // no desktop cada seção continua com seu próprio chevron colapsável
+      // (inalterado). No mobile isso virava uma lista enorme de acordeões
+      // todos abertos — em vez disso, uma barra de abas (nome de cada
+      // categoria, com scroll horizontal) decide qual seção aparece por
+      // vez, do jeito Lightroom mobile resolve isso (Light/Color/Effects
+      // etc., um de cada vez). Mesmo truque de CSS :has() das outras abas
+      // do app — sem isso, .control-section[data-section-id] (setado em
+      // ui/controls/section.js) não teria como saber qual delas mostrar.
+      if (isMobileViewport) {
+        // "Formato" também vira só mais uma categoria de ajuste aqui — no
+        // mobile ele não fica mais separado num menu próprio acima da
+        // sidebar (isso só faz sentido no desktop, onde tem espaço de
+        // sobra no topo); aqui ele entra no mesmo mecanismo de abas por
+        // ícone que todas as outras, como a primeira (continua sendo a
+        // config mais importante — ver comentário em buildFrameBar).
+        const formatPicker = createFrameTilePicker({
+          options: frameTileOptions(),
+          value: exportFrame,
+          onChange: onFrameChange,
+        });
+        const formatSection = createSection(t('exportFrameLabel'), [formatPicker.el], sectionOptions('format'));
+        sidebar.insertBefore(formatSection, sidebar.firstChild);
+
+        const categorySections = Array.from(sidebar.querySelectorAll('.control-section[data-section-id]'));
+        if (categorySections.length) {
+          const categoryTabs = document.createElement('div');
+          categoryTabs.className = 'gi-mobile-category-tabs';
+          categorySections.forEach((section, index) => {
+            const sectionId = section.dataset.sectionId;
+            const title = section.querySelector('.control-section-title')?.textContent ?? sectionId;
+            const inputId = `gi-cat-${sectionId}`;
+
+            const input = document.createElement('input');
+            input.type = 'radio';
+            input.name = 'gi-category-tab';
+            input.id = inputId;
+            input.className = 'gi-mobile-category-tabs-input';
+            input.checked = index === 0;
+
+            const tabLabel = document.createElement('label');
+            tabLabel.htmlFor = inputId;
+            tabLabel.className = 'gi-mobile-category-tabs-label';
+            // ícone em cima, nome embaixo — estilo Lightroom mobile (Luz/
+            // Cor/Efeitos etc.), bem mais fácil de reconhecer de relance
+            // rolando a barra horizontal do que só texto pequeno.
+            const iconMarkup = CATEGORY_ICONS[sectionId];
+            tabLabel.innerHTML =
+              (iconMarkup ? `<span class="gi-mobile-category-tabs-icon">${iconMarkup}</span>` : '') +
+              `<span class="gi-mobile-category-tabs-text">${title}</span>`;
+
+            categoryTabs.appendChild(input);
+            categoryTabs.appendChild(tabLabel);
+          });
+          // vai pro fim da sidebar (depois de todas as categorias,
+          // incluindo a de "Exportar" — ver acima) — não referencia mais
+          // a antiga div "actions" (só existe no desktop agora).
+          sidebar.appendChild(categoryTabs);
+
+          // trocar de categoria enquanto a sidebar já está rolada pra
+          // baixo (dentro de uma seção grande, tipo Cores) deixava o
+          // painel novo aberto FORA da tela, lá em cima — parecia que
+          // "não tinha nada" na aba escolhida até rolar manualmente pra
+          // ver. Ao trocar, rola suave de volta pro topo (onde toda seção
+          // começa) — o painel some/aparece já visível, sem esforço.
+          categoryTabs.addEventListener('change', () => {
+            sidebar.scrollTo({ top: 0, behavior: 'smooth' });
+          });
+        }
+      }
     }
 
     buildSidebar();
-    root.appendChild(sidebar);
+    // no mobile o formato já entra dentro da sidebar (ver isMobileViewport
+    // em buildSidebar, perto da barra de categorias) — sem barra própria
+    // solta aqui em cima, que era o que sobrava só com "Formato" e os
+    // botões de exportar visíveis, escondendo o resto dos ajustes.
+    let frameBar = isMobileViewport ? null : buildFrameBar();
+    const sidebarColumn = document.createElement('div');
+    sidebarColumn.className = 'gi-sidebar-column';
+    if (frameBar) sidebarColumn.appendChild(frameBar);
+    sidebarColumn.appendChild(sidebar);
+
+    root.appendChild(sidebarColumn);
     root.appendChild(stage);
     container.appendChild(root);
 
@@ -2214,17 +2858,79 @@ export const gridIconsModule = {
     renderHistory();
 
     cleanupPaste = listenForPaste(window, { onImage: (file) => handleStructureImage(file) });
+
+    // atalho de teclado — espaço gera um azulejo novo (igual ao "Novo
+    // azulejo"), inspirado no playgrnd.tools. Ignora se o foco tá num
+    // campo de texto/select (senão rouba o espaço de quem tá digitando um
+    // nome de preset ou colando um código) ou se tem modificador junto
+    // (evita brigar com atalho do navegador/SO).
+    function handleKeyboardShortcut(e) {
+      if (e.key !== ' ' && e.code !== 'Space') return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (document.activeElement?.isContentEditable) return;
+      e.preventDefault();
+      pushToHistory();
+      state.seed = randomSeed();
+      refreshGridOverrideIfEditing();
+      render();
+    }
+    window.addEventListener('keydown', handleKeyboardShortcut);
+    cleanupKeyboardShortcuts = () => window.removeEventListener('keydown', handleKeyboardShortcut);
+
+    // a largura disponível pro preview muda com o tamanho da tela — sem
+    // isso, redimensionar a janela deixava o quadrado contido dentro da
+    // moldura com o tamanho errado (calculado só 1x, na largura antiga).
+    window.addEventListener('resize', updatePreviewFrame);
+    // recalcula também se a toolbar (Novo azulejo/Criar variações/Estou
+    // com sorte) ou a trilha de abas mudar de tamanho por qualquer outro
+    // motivo que não seja resize da janela — texto de botão que troca de
+    // idioma e fica maior/menor, ou a fonte (Space Grotesk) terminando de
+    // carregar depois do primeiro render (o texto pode quebrar linha
+    // diferente do fallback do sistema). Sem isso, o preview ficava com o
+    // tamanho calculado pra uma toolbar que já não existe mais daquele
+    // jeito, sobrando pouco (ou espaço demais) embaixo e cortando os
+    // botões ou a trilha de abas.
+    const frameSizeObserver = new ResizeObserver(() => updatePreviewFrame());
+    frameSizeObserver.observe(stageToolbar);
+    frameSizeObserver.observe(stageTabsRow);
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => updatePreviewFrame());
+    }
+    cleanupFrameResize = () => {
+      window.removeEventListener('resize', updatePreviewFrame);
+      frameSizeObserver.disconnect();
+    };
+
     document.addEventListener('click', handleDocumentClickForThemeDropdown);
-    cleanupThemeDropdown = () => document.removeEventListener('click', handleDocumentClickForThemeDropdown);
+    document.addEventListener('keydown', handleDocumentKeydownForThemeDropdown);
+    cleanupThemeDropdown = () => {
+      document.removeEventListener('click', handleDocumentClickForThemeDropdown);
+      document.removeEventListener('keydown', handleDocumentKeydownForThemeDropdown);
+    };
     cleanupLang = onLangChange(() => {
+      // no mobile não existe frameBar próprio (ver acima) — o formato mora
+      // dentro da sidebar, e buildSidebar() (chamado embaixo) já refaz ele
+      // com os textos traduzidos junto de tudo mais.
+      if (frameBar) {
+        const newFrameBar = buildFrameBar();
+        frameBar.replaceWith(newFrameBar);
+        frameBar = newFrameBar;
+      }
       resultTitle.textContent = t('resultTitle');
+      resultTabLabel.textContent = t('resultTitle');
       variationsLabel.textContent = t('variationsLabel');
+      variationsTabLabel.textContent = t('variationsLabel');
       historyLabel.textContent = t('historyLabel');
+      historyTabLabel.textContent = t('historyLabel');
       regenerateButton.el.textContent = t('regenerateButton');
       variationsButton.el.textContent = t('variationsButton');
       luckyButton.el.textContent = t('luckyButton');
       const gridEditLabel = gridEditToggleRow.el.querySelector('.control-label');
-      if (gridEditLabel) gridEditLabel.textContent = t('fineControlLabel');
+      if (gridEditLabel) gridEditLabel.textContent = t('fineControlLabelShort');
+      gridEditToggleRow.el.querySelector('.toggle-switch')?.setAttribute('aria-label', t('fineControlLabelShort'));
+      gridEditToggleRow.el.title = t('fineControlLabel');
       buildSidebar();
     });
   },
@@ -2251,6 +2957,14 @@ export const gridIconsModule = {
     if (cleanupPaletteSwapSelect) {
       cleanupPaletteSwapSelect();
       cleanupPaletteSwapSelect = null;
+    }
+    if (cleanupKeyboardShortcuts) {
+      cleanupKeyboardShortcuts();
+      cleanupKeyboardShortcuts = null;
+    }
+    if (cleanupFrameResize) {
+      cleanupFrameResize();
+      cleanupFrameResize = null;
     }
   },
 };

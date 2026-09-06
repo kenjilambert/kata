@@ -11,6 +11,10 @@ export function createToggleSwitch({ label, value, onChange }) {
   switchBtn.className = 'toggle-switch';
   switchBtn.setAttribute('role', 'switch');
   switchBtn.setAttribute('aria-checked', String(!!value));
+  // o rótulo visível (labelSpan) pode ficar escondido em telas estreitas
+  // (ver .gi-grid-edit-toggle no mobile) — o aria-label garante que o
+  // switch continue com nome acessível mesmo sem o texto na tela.
+  switchBtn.setAttribute('aria-label', label);
   switchBtn.classList.toggle('on', !!value);
 
   const knob = document.createElement('span');

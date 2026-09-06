@@ -81,6 +81,16 @@ export function createIconSelect({ label, options, value, onChange }) {
   }
   document.addEventListener('pointerdown', handleOutsideClick, true);
 
+  // Esc fecha o painel aberto — sem isso só dava pra fechar clicando fora,
+  // sem atalho nenhum pra quem navega só de teclado.
+  function handleKeydown(e) {
+    if (e.key === 'Escape' && isOpen) {
+      isOpen = false;
+      renderCombo();
+    }
+  }
+  document.addEventListener('keydown', handleKeydown);
+
   renderCombo();
 
   return {
@@ -96,6 +106,9 @@ export function createIconSelect({ label, options, value, onChange }) {
     get value() {
       return currentValue;
     },
-    destroy: () => document.removeEventListener('pointerdown', handleOutsideClick, true),
+    destroy: () => {
+      document.removeEventListener('pointerdown', handleOutsideClick, true);
+      document.removeEventListener('keydown', handleKeydown);
+    },
   };
 }

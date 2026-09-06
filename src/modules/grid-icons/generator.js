@@ -3,7 +3,7 @@ import { pickWeighted } from '../../core/palette.js';
 import { generateSymmetricGrid } from '../../core/symmetry.js';
 import { nearestPaletteColor } from '../../core/imageSampling.js';
 import { buildGrainFilterMarkup } from '../../core/textures.js';
-import { SHAPES } from './shapes.js';
+import { SHAPES, shapeCoversEdge } from './shapes.js';
 
 // monta os shapeDefs de ícones customizados (SVG colado ou imagem/máscara
 // enviada) a partir da lista salva em state.customShapes — exportado (não só
@@ -107,15 +107,19 @@ function luminanceThresholdFor(grid, fillDensity) {
 // gradiente de densidade/tamanho: 0 = extremidade "vazia" do gradiente, 1 = extremidade
 // "cheia". Direções lineares varrem a grade de ponta a ponta; radiais usam distância
 // ao centro. Isso é independente do detailGradient acima (que só afeta subdivisão).
-function gradientFactorFor(r, c, size, densityGradient, gradientDirection) {
-  const denom = Math.max(1, size - 1);
-  const nx = c / denom;
-  const ny = r / denom;
+// Recebe o centro/contagem de cada eixo em separado (não um único "size") pra
+// funcionar igual numa grade quadrada (centerRow===centerCol, gridRows===
+// gridCols — dá exatamente a mesma conta de antes) ou numa retangular (ver
+// buildIconGrid: composição do "quadro" de exportação não-quadrado).
+function gradientFactorFor(r, c, centerRow, centerCol, gridRows, gridCols, densityGradient, gradientDirection) {
+  const denomX = Math.max(1, gridCols - 1);
+  const denomY = Math.max(1, gridRows - 1);
+  const nx = c / denomX;
+  const ny = r / denomY;
 
   if (densityGradient === 'radial') {
-    const center = denom / 2;
-    const maxDist = Math.sqrt(2) * center || 1;
-    const dist = Math.sqrt((r - center) ** 2 + (c - center) ** 2) / maxDist;
+    const maxDist = Math.sqrt(centerRow * centerRow + centerCol * centerCol) || 1;
+    const dist = Math.sqrt((r - centerRow) ** 2 + (c - centerCol) ** 2) / maxDist;
     return gradientDirection === 'edge-out' ? dist : 1 - dist;
   }
 
@@ -159,6 +163,8 @@ const DEFAULT_APPEARANCE = { transparentBackground: false, silhouette: false, in
 export function buildIconGrid({
   seed,
   size,
+  cols,
+  rows,
   symmetry,
   fillDensity,
   shapesAllowed,
@@ -173,16 +179,42 @@ export function buildIconGrid({
   gradientDirection = 'left-to-right',
   gradientStrength = 0.6,
 }) {
+  // cols/rows (opcionais) permitem uma grade RETANGULAR — usada só pelo
+  // "quadro" de exportação não-quadrado (ver buildFramedIconGrid mais
+  // abaixo e updatePreviewFrame em grid-icons/index.js): em vez de repetir
+  // (ladrilhar) o mesmo ícone quadrado pra preencher um formato 4:5/9:16/
+  // 16:9 — o que sempre deixava uma "costura" visível entre repetições —
+  // a composição inteira é gerada de uma vez só, do tamanho certo, sem
+  // repetição nenhuma. Sem cols/rows (o caso de sempre, ícone 1:1), o
+  // comportamento é EXATAMENTE o de antes: grade quadrada size×size, com
+  // toda a simetria disponível.
+  const gridCols = cols ?? size;
+  const gridRows = rows ?? size;
+  const isRect = gridCols !== gridRows;
   const rng = createRng(seed);
-  const center = (size - 1) / 2;
-  const maxRing = Math.max(1, Math.floor((size - 1) / 2));
+  const centerRow = (gridRows - 1) / 2;
+  const centerCol = (gridCols - 1) / 2;
+  const maxRing = Math.max(1, Math.floor((Math.max(gridRows, gridCols) - 1) / 2));
   // grade 2x2 (ver comentário em pickFamily): toda célula cai no anel 0,
   // não existe variedade de anel de verdade pra curar por família.
-  const ringsCollapse = Math.floor((size - 1) / 2) === 0;
+  const ringsCollapse = !isRect && Math.floor((size - 1) / 2) === 0;
   const shapeDefs = { ...SHAPES, ...customShapeDefs };
   const { silhouette, invert, inkColor } = { ...DEFAULT_APPEARANCE, ...appearance };
+  // guia de imagem é amostrado numa grade QUADRADA (size×size) em outro
+  // lugar — não se aplica à composição retangular do quadro de exportação
+  // (o "quadro" pede uma imageGuide=null explícito pra isso).
   const luminanceThreshold = imageGuide ? luminanceThresholdFor(imageGuide.grid, fillDensity) : null;
   const useDensityGradient = densityGradient !== 'none' && !imageGuide;
+
+  function outwardCorner(r, c) {
+    const vertical = r < centerRow ? 't' : 'b';
+    const horizontal = c < centerCol ? 'l' : 'r';
+    return vertical + horizontal;
+  }
+
+  function ringFor(r, c) {
+    return Math.floor(Math.max(Math.abs(r - centerRow), Math.abs(c - centerCol)));
+  }
 
   // t=1 é a ponta "cheia" do gradiente, t=0 a ponta "vazia" (ver gradientFactorFor).
   // Interpola entre a densidade base (sem gradiente) e o extremo 0↔1 conforme a
@@ -190,7 +222,7 @@ export function buildIconGrid({
   // então uma ponta fica praticamente sólida e a outra praticamente vazia.
   function effectiveDensityFor(r, c) {
     if (!useDensityGradient) return fillDensity;
-    const t = gradientFactorFor(r, c, size, densityGradient, gradientDirection);
+    const t = gradientFactorFor(r, c, centerRow, centerCol, gridRows, gridCols, densityGradient, gradientDirection);
     return fillDensity + gradientStrength * (t - fillDensity);
   }
 
@@ -205,7 +237,7 @@ export function buildIconGrid({
     const shapeDef = shapeDefs[shapeKey];
     let orientation;
     if (shapeDef.oriented) {
-      const outward = outwardCorner(r, c, center);
+      const outward = outwardCorner(r, c);
       const preferred = ring === 0 ? OPPOSITE_CORNER[outward] : outward;
       orientation = rng() < 0.75 ? preferred : ALL_CORNERS[Math.floor(rng() * ALL_CORNERS.length)];
     }
@@ -227,7 +259,7 @@ export function buildIconGrid({
   function cellFactory(r, c) {
     if (!isFilled(r, c)) return { shape: 'blank' };
 
-    const ring = Math.floor(Math.max(Math.abs(r - center), Math.abs(c - center)));
+    const ring = ringFor(r, c);
     const effectiveSubdivision = subdivisionChance * detailMultiplierFor(ring, maxRing, detailGradient);
 
     if (effectiveSubdivision > 0 && rng() < effectiveSubdivision) {
@@ -247,30 +279,41 @@ export function buildIconGrid({
     return { shape: shapeKey, orientation, color: pickColorFor(r, c) };
   }
 
-  const grid = generateSymmetricGrid({ size, symmetry, cellFactory });
+  let grid;
+  if (isRect) {
+    // grade retangular: sem simetria (espelhar/girar um recorte não-
+    // quadrado em torno de um centro comum não tem uma definição única) —
+    // cada célula é gerada direto, mas com as MESMAS regras de forma/cor/
+    // densidade/anel de sempre, então continua parecendo a mesma
+    // "família" visual do ícone quadrado, só que como uma composição
+    // própria do tamanho certo.
+    grid = Array.from({ length: gridRows }, (_, r) => Array.from({ length: gridCols }, (_, c) => cellFactory(r, c)));
+  } else {
+    grid = generateSymmetricGrid({ size, symmetry, cellFactory });
 
-  // caso extremo: espelho-total/rotacional com resolução 2 ou 3 tem só 1
-  // célula-semente (o resto da grade INTEIRA é cópia dela — ver symmetry.js/
-  // remapCell) — cor incluída, não só forma, deixando o ícone de uma cor só.
-  // Resoluções maiores têm várias células-semente diferentes se misturando,
-  // então não sofrem disso; por isso a correção mira só esse caso (h===1),
-  // sem mudar o comportamento geral de simetria (que intencionalmente também
-  // espelha cor, não só forma, nas demais resoluções).
-  const isDegenerateSeedSymmetry =
-    (symmetry === 'mirror-full' || symmetry === 'rotational') && Math.floor(size / 2) === 1;
-  if (isDegenerateSeedSymmetry) {
-    for (let r = 0; r < size; r++) {
-      for (let c = 0; c < size; c++) {
-        if (r === 0 && c === 0) continue; // célula-semente original, mantém
-        const cell = grid[r][c];
-        if (cell.shape !== 'blank' && cell.shape !== 'subdivided') {
-          grid[r][c] = { ...cell, color: pickColorFor(r, c) };
+    // caso extremo: espelho-total/rotacional com resolução 2 ou 3 tem só 1
+    // célula-semente (o resto da grade INTEIRA é cópia dela — ver symmetry.js/
+    // remapCell) — cor incluída, não só forma, deixando o ícone de uma cor só.
+    // Resoluções maiores têm várias células-semente diferentes se misturando,
+    // então não sofrem disso; por isso a correção mira só esse caso (h===1),
+    // sem mudar o comportamento geral de simetria (que intencionalmente também
+    // espelha cor, não só forma, nas demais resoluções).
+    const isDegenerateSeedSymmetry =
+      (symmetry === 'mirror-full' || symmetry === 'rotational') && Math.floor(size / 2) === 1;
+    if (isDegenerateSeedSymmetry) {
+      for (let r = 0; r < size; r++) {
+        for (let c = 0; c < size; c++) {
+          if (r === 0 && c === 0) continue; // célula-semente original, mantém
+          const cell = grid[r][c];
+          if (cell.shape !== 'blank' && cell.shape !== 'subdivided') {
+            grid[r][c] = { ...cell, color: pickColorFor(r, c) };
+          }
         }
       }
     }
   }
 
-  return { grid, size };
+  return { grid, size, cols: gridCols, rows: gridRows };
 }
 
 // tamanho de ícone "de referência" pro traço em px fazer sentido como valor
@@ -284,6 +327,8 @@ const OUTLINE_REFERENCE_ICON_SIZE = 420;
 export function renderGridToSvg({
   grid,
   size,
+  cols,
+  rows,
   iconSize,
   background,
   fillEnabled = true,
@@ -305,22 +350,29 @@ export function renderGridToSvg({
   appearance = DEFAULT_APPEARANCE,
   customShapeDefs = {},
 }) {
+  // cellSize sempre vem do par (size, iconSize) — a referência "quadrada"
+  // de sempre (ex.: 420/resolução) — mesmo quando a grade de verdade
+  // (gridCols×gridRows) é retangular (quadro de exportação não-quadrado):
+  // é o que faz uma célula ocupar o MESMO tamanho físico em ambos os
+  // casos, em vez de esticar/encolher célula ao mudar de formato.
   const cellSize = iconSize / size;
+  const gridCols = cols ?? size;
+  const gridRows = rows ?? size;
+  const iconWidth = gridCols * cellSize;
+  const iconHeight = gridRows * cellSize;
   const style = { fillEnabled, strokeEnabled, strokeColor, strokeWidth };
   // traço decorativo (contorno): px "de referência" pra uma célula de
   // primeiro nível (não varia com a resolução — 2x2 e 10x10 têm células de
   // tamanhos bem diferentes, mas o contorno deve parecer igual). Escalado
   // pela referência de tamanho do ÍCONE pra miniaturas menores (variações/
   // histórico) mostrarem o traço proporcionalmente mais fino, não gigante.
-  // Células SUBDIVIDIDAS (detalhe) desenham em metade do tamanho — usar essa
-  // mesma largura ali faria o traço parecer bem mais grosso relativo à forma
-  // menor; outlineWidthForBox() abaixo escala pra baixo proporcionalmente ao
-  // tamanho real da caixa sendo desenhada, mantendo o peso visual igual em
-  // qualquer nível de subdivisão.
+  // Espessura ABSOLUTA e igual pra qualquer célula, inclusive as SUBDIVIDIDAS
+  // (detalhe, desenhadas em metade do tamanho) — escalar pra baixo ali (como
+  // antes) fazia o traço de uma célula subdividida ficar mais fino que o da
+  // vizinha não-subdividida bem na linha que as separa, e como as duas
+  // desenham seu próprio traço voltado pra dentro, a costura ficava com duas
+  // espessuras diferentes lado a lado em vez de uma linha só uniforme.
   const outlineWidthPx = Math.max(0.5, strokeOutlineWidth * (iconSize / OUTLINE_REFERENCE_ICON_SIZE));
-  function outlineWidthForBox(cellBoxSize) {
-    return Math.max(0.5, outlineWidthPx * (cellBoxSize / cellSize));
-  }
   const shapeDefs = { ...SHAPES, ...customShapeDefs };
   const { transparentBackground, silhouette, invert, inkColor } = { ...DEFAULT_APPEARANCE, ...appearance };
 
@@ -348,15 +400,15 @@ export function renderGridToSvg({
   // fora de <defs>.
   let clipDefsMarkup = '';
 
-  // cor "efetiva" de uma célula vizinha, só pra decidir se o traço entre elas
-  // deve sumir (ver suppressedEdges abaixo) — vizinha fora da grade, vazia ou
-  // subdividida (sem uma cor única própria) nunca "casa", então a borda com
-  // ela sempre mostra traço normalmente.
-  function neighborColor(r, c) {
-    if (r < 0 || r >= size || c < 0 || c >= size) return null;
+  // célula vizinha, só pra decidir se o traço na borda compartilhada deve
+  // sumir de UM dos dois lados (ver suppressed abaixo) — vizinha fora da
+  // grade, vazia ou subdividida (sem uma forma única própria) nunca conta,
+  // então a borda com ela sempre mostra o traço normalmente.
+  function neighborInfo(r, c) {
+    if (r < 0 || r >= gridRows || c < 0 || c >= gridCols) return null;
     const n = grid[r][c];
     if (!n || n.shape === 'blank' || n.shape === 'subdivided') return null;
-    return n.color;
+    return n;
   }
 
   // traço "pra dentro": em vez de recortar pela caixa da célula (o que dava
@@ -385,7 +437,7 @@ export function renderGridToSvg({
     const paintStyle = { ...style, gradientFillId: sharedGradientId };
     let inner;
     if (style.strokeEnabled) {
-      const localOutlineWidthPx = outlineWidthForBox(cellBoxSize);
+      const localOutlineWidthPx = outlineWidthPx;
       const clipId = `cell-clip-${globalClipCounter++}`;
       // algumas formas (cruz, anel, xis) usam strokeWidth pra decidir a
       // própria geometria (espessura da barra/anel), não só a
@@ -422,38 +474,55 @@ export function renderGridToSvg({
       });
       let strokeGroup = `<g clip-path="url(#${clipId})">${strokeOnlyMarkup}</g>`;
 
-      // sem traço entre duas células vizinhas da MESMA cor — só nas bordas
-      // onde a cor realmente muda (ou encosta no fundo/vazio). Recorta uma
-      // segunda vez (interseção com o primeiro clip) removendo uma faixa nas
-      // bordas da célula que "casam" com a vizinha; como o clip de cima já
-      // deixou só a metade de dentro do traço (largura nominal) colada
-      // exatamente nessas bordas, uma faixa de ~1.5x a largura nominal cobre
-      // toda ela com folga. Só afeta strokeGroup — o fill acima fica de fora.
+      // nunca duas células desenham o traço da MESMA borda compartilhada —
+      // isso é o que dava linha dupla (e de espessura inconsistente) toda vez
+      // que duas formas se tocavam. Convenção: cada célula sempre desenha seu
+      // próprio traço embaixo/à direita; suprime em cima/à esquerda sempre
+      // que a vizinha ali (de cima/esquerda) for cobrir essa MESMA borda pelo
+      // lado dela — assim a linha compartilhada é desenhada uma única vez
+      // (pela célula de cima/esquerda), nunca duas. Só suprime se a PRÓPRIA
+      // forma cobrir aquele lado de ponta a ponta (ver shapeCoversEdge) —
+      // senão a faixa cortada arrancaria um pedaço do contorno bem na ponta
+      // de formas menores que a célula (losango, cruz, asterisco...),
+      // expondo o preenchimento cru ali. Não depende mais da cor da vizinha
+      // bater: a ideia agora é sempre uma linha só em qualquer costura, não
+      // só quando as cores coincidem.
       if (neighbors) {
         const suppressed = {
-          top: neighbors.top != null && neighbors.top === cell.color,
-          bottom: neighbors.bottom != null && neighbors.bottom === cell.color,
-          left: neighbors.left != null && neighbors.left === cell.color,
-          right: neighbors.right != null && neighbors.right === cell.color,
+          top:
+            neighbors.top != null &&
+            shapeCoversEdge(cell.shape, 'top', cell.orientation) &&
+            shapeCoversEdge(neighbors.top.shape, 'bottom', neighbors.top.orientation),
+          left:
+            neighbors.left != null &&
+            shapeCoversEdge(cell.shape, 'left', cell.orientation) &&
+            shapeCoversEdge(neighbors.left.shape, 'right', neighbors.left.orientation),
         };
-        if (suppressed.top || suppressed.bottom || suppressed.left || suppressed.right) {
-          // máscara (branco=mostra, preto=esconde) em vez de um único path
-          // evenodd somando os retângulos de faixa: quando DUAS faixas
-          // perpendiculares se suprimem ao mesmo tempo (ex.: topo + esquerda),
-          // elas se sobrepõem no cantinho compartilhado — evenodd conta essa
-          // sobreposição como "dentro" de novo (par vira ímpar), reabrindo uma
-          // lasquinha de traço bem no canto que deveria ficar escondido. Faixas
-          // pretas numa máscara só se somam (preto sobre preto continua
-          // preto), então sobreposição nunca reabre nada.
+        if (suppressed.top || suppressed.left) {
+          // um <clipPath> aninhado POR LADO suprimido (interseção natural de
+          // clips), em vez de <mask> — <mask> depende de um passo extra de
+          // composição (rasterizar luminância à parte e multiplicar) que se
+          // mostrou instável quando o ícone divide a página com outros SVGs
+          // (histórico, variações): o traço daquele lado podia sumir inteiro,
+          // sem motivo aparente, só nesses casos. Clip-path é resolvido na
+          // hora de desenhar o próprio traço, sem essa etapa a parte, e cada
+          // clip aqui corta só UMA faixa (evenodd sem sobreposição possível),
+          // então não tem o problema antigo de duas faixas se cancelando no
+          // canto compartilhado — aninhar dois clips (topo E esquerda) já
+          // faz a interseção certa sozinho.
           const band = Math.max(1, localOutlineWidthPx * 1.5);
-          let bands = '';
-          if (suppressed.top) bands += `<rect x="0" y="0" width="${cellBoxSize}" height="${band}" fill="#000" />`;
-          if (suppressed.bottom) bands += `<rect x="0" y="${cellBoxSize - band}" width="${cellBoxSize}" height="${band}" fill="#000" />`;
-          if (suppressed.left) bands += `<rect x="0" y="0" width="${band}" height="${cellBoxSize}" fill="#000" />`;
-          if (suppressed.right) bands += `<rect x="${cellBoxSize - band}" y="0" width="${band}" height="${cellBoxSize}" fill="#000" />`;
-          const holeMaskId = `cell-edge-hole-${globalClipCounter++}`;
-          clipDefsMarkup += `<mask id="${holeMaskId}"><rect x="0" y="0" width="${cellBoxSize}" height="${cellBoxSize}" fill="#fff" />${bands}</mask>\n`;
-          strokeGroup = `<g mask="url(#${holeMaskId})">${strokeGroup}</g>`;
+          if (suppressed.top) {
+            const id = `cell-edge-hole-${globalClipCounter++}`;
+            const bandRect = `M 0 0 H ${cellBoxSize} V ${band} H 0 Z`;
+            clipDefsMarkup += `<clipPath id="${id}"><path d="M 0 0 H ${cellBoxSize} V ${cellBoxSize} H 0 Z ${bandRect}" fill-rule="evenodd" /></clipPath>\n`;
+            strokeGroup = `<g clip-path="url(#${id})">${strokeGroup}</g>`;
+          }
+          if (suppressed.left) {
+            const id = `cell-edge-hole-${globalClipCounter++}`;
+            const bandRect = `M 0 0 V ${cellBoxSize} H ${band} V 0 Z`;
+            clipDefsMarkup += `<clipPath id="${id}"><path d="M 0 0 H ${cellBoxSize} V ${cellBoxSize} H 0 Z ${bandRect}" fill-rule="evenodd" /></clipPath>\n`;
+            strokeGroup = `<g clip-path="url(#${id})">${strokeGroup}</g>`;
+          }
         }
       }
       inner = fillMarkup + strokeGroup;
@@ -472,14 +541,12 @@ export function renderGridToSvg({
   }
 
   let cellsMarkup = '';
-  for (let r = 0; r < size; r++) {
-    for (let c = 0; c < size; c++) {
+  for (let r = 0; r < gridRows; r++) {
+    for (let c = 0; c < gridCols; c++) {
       const neighbors = style.strokeEnabled
         ? {
-            top: neighborColor(r - 1, c),
-            bottom: neighborColor(r + 1, c),
-            left: neighborColor(r, c - 1),
-            right: neighborColor(r, c + 1),
+            top: neighborInfo(r - 1, c),
+            left: neighborInfo(r, c - 1),
           }
         : null;
       cellsMarkup += drawCell(grid[r][c], c * cellSize, r * cellSize, cellSize, neighbors);
@@ -489,9 +556,15 @@ export function renderGridToSvg({
   const bgColor = silhouette ? (invert ? inkColor : background) : invert ? invertHex(background) : background;
   const backgroundMarkup = transparentBackground
     ? ''
-    : `<g id="background"><rect width="${iconSize}" height="${iconSize}" fill="${bgColor}" /></g>\n  `;
+    : `<g id="background"><rect width="${iconWidth}" height="${iconHeight}" fill="${bgColor}" /></g>\n  `;
 
-  const rotationAttr = rotation ? ` transform="rotate(${rotation} ${iconSize / 2} ${iconSize / 2})"` : '';
+  // rotação (0/90/180/270°) só se aplica de verdade numa grade QUADRADA —
+  // numa retangular, girar 90/270 trocaria largura por altura e o
+  // conteúdo vazaria pra fora do viewBox fixo. O quadro de exportação
+  // não-quadrado sempre chama esta função com rotation=0 por causa disso
+  // (ver buildFramedIconSvg em grid-icons/index.js); o ícone 1:1 normal
+  // continua girando livremente, sem mudança nenhuma aqui.
+  const rotationAttr = rotation ? ` transform="rotate(${rotation} ${iconWidth / 2} ${iconHeight / 2})"` : '';
 
   // máscaras dos ícones customizados: um único <mask> por ícone enviado,
   // reaproveitado por todas as células que o usam (maskContentUnits em
@@ -511,7 +584,7 @@ export function renderGridToSvg({
   const defsMarkup = allDefsMarkup ? `<defs>\n${allDefsMarkup}</defs>\n  ` : '';
   const iconFilterAttr = grainFilterId ? ` filter="url(#${grainFilterId})"` : '';
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${iconSize} ${iconSize}" width="${iconSize}" height="${iconSize}">
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${iconWidth} ${iconHeight}" width="${iconWidth}" height="${iconHeight}">
   <g${rotationAttr}>
   ${defsMarkup}${backgroundMarkup}<g id="icon"${iconFilterAttr}>
 ${cellsMarkup}  </g>
@@ -520,6 +593,41 @@ ${cellsMarkup}  </g>
 }
 
 export function generateIcon(params) {
-  const { grid, size } = buildIconGrid(params);
-  return renderGridToSvg({ ...params, grid, size });
+  const { grid, size, cols, rows } = buildIconGrid(params);
+  return renderGridToSvg({ ...params, grid, size, cols, rows });
+}
+
+// gera a composição INTEIRA do "quadro" de exportação não-quadrado numa
+// passada só — sem repetir/ladrilhar o ícone 1:1 (isso deixava uma
+// "costura" visível a cada repetição, e cortava formas ao meio na borda
+// do quadro sempre que a proporção não batia com um múltiplo exato do
+// ícone). Em vez disso, a MESMA grade é só esticada em colunas ou linhas
+// (o eixo que cresce pra alcançar a proporção pedida) — a resolução, o
+// tamanho de célula e todas as regras de forma/cor/densidade continuam
+// as mesmas de sempre, só aparece mais grade (mais colunas numa
+// paisagem, mais linhas num retrato), como se o próprio padrão
+// continuasse. Sem guia de imagem (amostrada só em grade quadrada) e sem
+// rotação global (giraria o retângulo pra fora do próprio viewBox) — as
+// duas coisas continuam funcionando normalmente no ícone 1:1 em si.
+// colunas/linhas da composição — exportada separada da função de baixo
+// porque quem monta o preview (grid-icons/index.js) precisa saber a
+// proporção REAL que vai sair (cols/rows) ANTES de decidir o tamanho da
+// caixa do preview. A proporção pedida (ex.: 4:5 exato) quase nunca cai
+// num número inteiro de colunas/linhas — arredondar pra cima/baixo aqui é
+// o que garante células sempre INTEIRAS, mas isso desvia um pouco da
+// proporção nominal (0.8 vira, por ex., 0.75). Se a caixa do preview
+// fosse dimensionada pela proporção NOMINAL em vez da REAL (cols/rows), a
+// composição saía cortada de um lado ou sobrando vazio do outro — daí a
+// caixa do preview tem que sempre seguir esta conta, não o rótulo do
+// formato.
+export function framedGridDims(size, ratio) {
+  const cols = ratio >= 1 ? Math.max(1, Math.round(size * ratio)) : size;
+  const rows = ratio >= 1 ? size : Math.max(1, Math.round(size / ratio));
+  return { cols, rows };
+}
+
+export function generateFramedIcon(params, ratio) {
+  const { cols, rows } = framedGridDims(params.size, ratio);
+  const { grid } = buildIconGrid({ ...params, cols, rows, imageGuide: null });
+  return renderGridToSvg({ ...params, grid, cols, rows, rotation: 0 });
 }

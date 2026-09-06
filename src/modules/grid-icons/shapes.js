@@ -8,6 +8,19 @@
 // (espessura da barra/anel, essa sim proporcional à célula) — sem essa
 // separação, o traço decorativo ficava mais grosso ou mais fino conforme a
 // resolução da grade, em vez de sempre parecer do mesmo tamanho.
+// espessura NOMINAL (a que realmente aparece) a partir do valor que chega em
+// style.paintStrokeWidth — vindo de renderGridToSvg esse valor já é o DOBRO
+// do nominal (pensado pro esquema antigo de "risca dobrado e recorta pela
+// metade de dentro"); formas circulares (arco, disco...) não usam mais esse
+// esquema pra suas curvas — desenham o próprio arco/círculo já encolhido pra
+// dentro no raio certo, então só precisam da metade. Sem paintStrokeWidth
+// (chamada direta, fora do pipeline do gerador) o valor já é o nominal.
+function nominalStrokeWidth(size, style) {
+  return style?.paintStrokeWidth != null
+    ? Math.max(0.25, style.paintStrokeWidth / 2)
+    : Math.max(1, size * (style?.strokeWidth ?? 0.22) * 0.4);
+}
+
 function paintAttrs(size, color, style) {
   const fillOn = style?.fillEnabled ?? true;
   const strokeOn = style?.strokeEnabled ?? false;
@@ -50,28 +63,39 @@ const QUARTER_ARC = {
   bl: (s) => `M 0 ${s} L 0 0 A ${s} ${s} 0 0 1 ${s} ${s} Z`,
 };
 
-// só a curva (sem os dois lados retos que colam nas bordas da célula) — é o que
-// de fato diferencia o "arco" de um canto qualquer, então é só isso que o modo
-// contorno desenha (as retas coincidentes com a borda da célula não entram).
-const QUARTER_ARC_CURVE = {
-  tl: (s) => `M ${s} 0 A ${s} ${s} 0 0 1 0 ${s}`,
-  tr: (s) => `M ${s} ${s} A ${s} ${s} 0 0 1 0 0`,
-  br: (s) => `M 0 ${s} A ${s} ${s} 0 0 1 ${s} 0`,
-  bl: (s) => `M 0 0 A ${s} ${s} 0 0 1 ${s} ${s}`,
+// centro (um dos 4 cantos da célula) e os dois pontos-extremos (a raio = size
+// desse centro) que definem o arco de cada orientação — usado só pra desenhar
+// o TRAÇO da curva já no raio certo (ver insetArcPath), em vez do esquema
+// antigo (arco no raio ORIGINAL, dobrado de largura, recortado por fora): os
+// dois raios (interno/externo do traço dobrado) e o raio do recorte coincidiam
+// exatamente um em cima do outro, e o navegador tem que suavizar (anti-alias)
+// DUAS bordas curvas sobrepostas na mesma linha — o resultado media pra uma
+// faixa bem mais grossa e borrada que um traço reto do mesmo tamanho nominal.
+// Desenhando o arco já no raio final (encolhido/esticado pela metade da
+// espessura, sem nenhum recorte em cima) evita essa sobreposição.
+const CORNER_CENTER = { tl: [0, 0], tr: [1, 0], bl: [0, 1], br: [1, 1] };
+const CORNER_ENDPOINTS = {
+  tl: [[1, 0], [0, 1]],
+  tr: [[1, 1], [0, 0]],
+  br: [[0, 1], [1, 0]],
+  bl: [[0, 0], [1, 1]],
 };
+function insetArcPath(size, orientation, radius) {
+  const [cx, cy] = CORNER_CENTER[orientation].map((v) => v * size);
+  const [[x1, y1], [x2, y2]] = CORNER_ENDPOINTS[orientation].map(([x, y]) => [x * size, y * size]);
+  const scale = radius / size;
+  const p1 = [cx + (x1 - cx) * scale, cy + (y1 - cy) * scale];
+  const p2 = [cx + (x2 - cx) * scale, cy + (y2 - cy) * scale];
+  return `M ${p1[0]} ${p1[1]} A ${radius} ${radius} 0 0 1 ${p2[0]} ${p2[1]}`;
+}
 
-// contorno real do "arco invertido": os dois lados retos que sobrevivem ao corte
-// (os que não tocam o canto arredondado) + a curva do próprio corte — em vez de
-// contornar o quadrado inteiro, que faria parecer que o traço ignora o recorte.
-// O sweep-flag da curva (0 em tl/tr/bl, 1 em br) NÃO é typo — cada valor foi
-// conferido contra o sentido do arco correspondente em QUARTER_ARC (tl/tr/bl
-// percorrem essa curva no sentido invertido do original, br no mesmo sentido);
-// não "corrigir" pra deixar os 4 iguais.
-const QUARTER_INVERSE_OUTLINE = {
-  tl: (s) => `M ${s} 0 L ${s} ${s} L 0 ${s} A ${s} ${s} 0 0 0 ${s} 0 Z`,
-  tr: (s) => `M ${s} ${s} L 0 ${s} L 0 0 A ${s} ${s} 0 0 0 ${s} ${s} Z`,
-  br: (s) => `M ${s} 0 L 0 0 L 0 ${s} A ${s} ${s} 0 0 1 ${s} 0 Z`,
-  bl: (s) => `M 0 0 L ${s} 0 L ${s} ${s} A ${s} ${s} 0 0 0 0 0 Z`,
+// só os dois lados retos do "contorno" do arco invertido (sem a curva) — a curva do traço
+// é desenhada à parte por insetArcPath, no raio certo (ver comentário ali).
+const QUARTER_INVERSE_STRAIGHT = {
+  tl: (s) => `M ${s} 0 L ${s} ${s} L 0 ${s}`,
+  tr: (s) => `M ${s} ${s} L 0 ${s} L 0 0`,
+  br: (s) => `M ${s} 0 L 0 0 L 0 ${s}`,
+  bl: (s) => `M 0 0 L ${s} 0 L ${s} ${s}`,
 };
 
 // arco e arco invertido têm geometria de contorno própria (só a curva/aresta
@@ -91,14 +115,11 @@ function quarterCircle(size, color, orientation = 'tl', style) {
   }
   if (strokeOn) {
     const strokeColor = style?.strokeColor ?? color;
-    // sem "round": a ponta arredondada do traço estica pra fora do próprio
-    // ponto final (que fica bem em cima do canto da célula), vazando pra
-    // célula vizinha — "butt" (padrão) para exatamente no ponto.
-    const sw =
-      style?.paintStrokeWidth != null
-        ? Math.max(0.5, style.paintStrokeWidth)
-        : Math.max(1, size * (style?.strokeWidth ?? 0.22) * 0.4);
-    markup += `<path d="${QUARTER_ARC_CURVE[orientation](size)}" fill="none" stroke="${strokeColor}" stroke-width="${sw}" />`;
+    const sw = nominalStrokeWidth(size, style);
+    // arco desenhado no raio final (encolhido pra dentro por metade da
+    // espessura) em vez do raio original + recorte externo — ver comentário
+    // em CORNER_CENTER/insetArcPath.
+    markup += `<path d="${insetArcPath(size, orientation, size - sw / 2)}" fill="none" stroke="${strokeColor}" stroke-width="${sw}" />`;
   }
   return markup;
 }
@@ -115,11 +136,16 @@ function quarterCircleInverse(size, color, orientation = 'tl', style) {
   }
   if (strokeOn) {
     const strokeColor = style?.strokeColor ?? color;
-    const sw =
-      style?.paintStrokeWidth != null
-        ? Math.max(0.5, style.paintStrokeWidth)
-        : Math.max(1, size * (style?.strokeWidth ?? 0.22) * 0.4);
-    markup += `<path d="${QUARTER_INVERSE_OUTLINE[orientation](size)}" fill="none" stroke="${strokeColor}" stroke-width="${sw}" stroke-linejoin="round" />`;
+    const sw = nominalStrokeWidth(size, style);
+    // lados retos: continuam no esquema antigo (dobro da espessura, recorte
+    // externo cuida de encolher pra dentro) — não têm o problema de curva,
+    // já que o recorte ali é feito por generator.js em cima da silhueta
+    // inteira, não numa borda coincidente com o próprio traço reto.
+    const straightSw = style?.paintStrokeWidth != null ? Math.max(0.5, style.paintStrokeWidth) : sw;
+    markup += `<path d="${QUARTER_INVERSE_STRAIGHT[orientation](size)}" fill="none" stroke="${strokeColor}" stroke-width="${straightSw}" />`;
+    // a curva do "corte" fica FORA do círculo original (a fatia sobrando é a
+    // parte de fora do arco) — por isso o raio aqui cresce em vez de encolher.
+    markup += `<path d="${insetArcPath(size, orientation, size + sw / 2)}" fill="none" stroke="${strokeColor}" stroke-width="${sw}" />`;
   }
   return markup;
 }
@@ -171,7 +197,23 @@ function diagonalCross(size, color, style) {
 // buraco circular vazado.
 function disc(size, color, style) {
   const c = size / 2;
-  return `<circle cx="${c}" cy="${c}" r="${c}" ${paintAttrs(size, color, style)} />`;
+  const fillOn = style?.fillEnabled ?? true;
+  const strokeOn = style?.strokeEnabled ?? false;
+  let markup = '';
+  if (fillOn) {
+    const fillPaint = style?.gradientFillId ? `url(#${style.gradientFillId})` : color;
+    markup += `<circle cx="${c}" cy="${c}" r="${c}" fill="${fillPaint}" />`;
+  }
+  if (strokeOn) {
+    // círculo já encolhido pra dentro por metade da espessura, em vez de um
+    // único círculo no raio cheio com fill+stroke juntos (o traço nesse caso
+    // metade fica pra fora, recortado depois — mesmo problema de borda curva
+    // coincidente com o recorte que afetava o arco, ver insetArcPath).
+    const strokeColor = style?.strokeColor ?? color;
+    const sw = nominalStrokeWidth(size, style);
+    markup += `<circle cx="${c}" cy="${c}" r="${Math.max(0.1, c - sw / 2)}" fill="none" stroke="${strokeColor}" stroke-width="${sw}" />`;
+  }
+  return markup;
 }
 
 function bowtie(size, color, style) {
@@ -371,3 +413,48 @@ export const SHAPES = {
 };
 
 export const SHAPE_KEYS = Object.keys(SHAPES);
+
+// que lados da célula uma forma cobre de PONTA A PONTA (não só toca num
+// pontinho ou num trecho parcial) — usado só pra decidir se é seguro
+// suprimir o traço entre duas células vizinhas (o truque que faz duas formas
+// grudadas parecerem uma peça só, sem risco de linha dupla). Suprimir um lado
+// que a forma só toca parcialmente (ex.: a ponta do losango, o braço da cruz,
+// os picos do asterisco) arranca um pedaço do contorno bem na ponta e expõe o
+// preenchimento cru ali — por isso o padrão é NENHUM lado seguro, e só as
+// formas realmente conferidas entram na lista. Valor pode ser um objeto fixo
+// (formas sem orientação) ou uma função de orientação → objeto (triângulo,
+// arco... cobrem lados DIFERENTES dependendo de pra onde apontam).
+const FULL_EDGES = { top: true, bottom: true, left: true, right: true };
+const OPPOSITE_CORNER = { tl: 'br', tr: 'bl', br: 'tl', bl: 'tr' };
+// triângulo e arco preenchem o canto todo na direção da orientação — os dois
+// lados retos que formam aquele canto ficam cheios de ponta a ponta (a
+// hipotenusa/curva é a aresta interna, não encosta em nenhuma borda da
+// célula).
+function cornerEdges(orientation) {
+  return {
+    top: orientation === 'tl' || orientation === 'tr',
+    bottom: orientation === 'bl' || orientation === 'br',
+    left: orientation === 'tl' || orientation === 'bl',
+    right: orientation === 'tr' || orientation === 'br',
+  };
+}
+export const SHAPE_EDGE_COVERAGE = {
+  square: () => FULL_EDGES,
+  circle: () => FULL_EDGES,
+  ring: () => FULL_EDGES,
+  prism: () => FULL_EDGES,
+  hourglass: () => ({ top: true, bottom: true, left: false, right: false }),
+  triangle: (orientation) => cornerEdges(orientation),
+  quarterCircle: (orientation) => cornerEdges(orientation),
+  // a fatia sobrando do "arco invertido" fica no canto OPOSTO ao da
+  // orientação (ela é o que sobra depois de cortar o arco daquele canto).
+  quarterCircleInverse: (orientation) => cornerEdges(OPPOSITE_CORNER[orientation]),
+  // "canto cortado" é o quadrado inteiro com uma mordida pequena só num
+  // canto — os dois lados que tocam esse canto ficam parcialmente mordidos,
+  // só os dois lados do canto OPOSTO continuam cheios de ponta a ponta.
+  cornerNotch: (orientation) => cornerEdges(OPPOSITE_CORNER[orientation]),
+};
+
+export function shapeCoversEdge(shapeKey, edge, orientation) {
+  return SHAPE_EDGE_COVERAGE[shapeKey]?.(orientation)?.[edge] ?? false;
+}

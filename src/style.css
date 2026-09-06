@@ -1,18 +1,79 @@
 :root {
-  --bg: #f3f0e6;
-  --panel: #f3f0e6;
-  --border: #f2601c;
-  --text: #17140f;
-  --text-muted: #7a756a;
-  --accent: #f2601c;
-  --accent-text: #ffffff;
-  --track-off: rgba(23, 20, 15, 0.14);
-  --text-faint: rgba(23, 20, 15, 0.36);
-  font-family: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  /* paleta espelhada no kenjilambert.com: preto quase puro, creme como
+     "texto principal" (não branco puro) e os dois acentos que se revezam
+     lá (vermelho pros CTAs/estado ativo, azul como acento secundário). */
+  --bg: #0a0a0a;
+  --panel: #141414;
+  --border: rgba(241, 238, 192, 0.16);
+  --text: #f1eec0;
+  --text-muted: rgba(241, 238, 192, 0.62);
+  --accent: #ea4530;
+  --accent-2: #3aa1d8;
+  --accent-text: #f1eec0;
+  --track-off: rgba(241, 238, 192, 0.14);
+  /* 0.4 media falhava contraste (WCAG AA) em texto pequeno — subido pra
+     0.55, ainda claramente "mais apagado" que --text-muted mas legível. */
+  --text-faint: rgba(241, 238, 192, 0.55);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+  /* curva "com mola" (aproximação de spring physics via cubic-bezier — CSS
+     não tem um motor de física de verdade) inspirada no Material 3
+     Expressive: troca curvas de duração+ease neutras por um pequeno
+     "overshoot" (passa um pouco do alvo e volta), pra estados de seleção
+     (aba ativa, switch, indicador de nav) parecerem mais vivos/elásticos
+     em vez de mecânicos. Usada só em transições de UI curtas — nada no
+     preview/geração do padrão em si. */
+  --ease-expressive: cubic-bezier(0.34, 1.56, 0.64, 1);
+  font-family: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* entrada de painel/galeria ao trocar de aba (categoria de ajuste, ou
+   Resultado/Variações/Histórico) — "sobe" de leve em vez de só aparecer
+   estático, dá a mesma resposta de um bottom sheet abrindo. */
+@keyframes gi-section-enter {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 * {
   box-sizing: border-box;
+}
+
+/* o app depende de vários painéis com scroll interno próprio (barra
+   lateral, stage, galeria, dropdowns) — sem isso, cada um deles rola com a
+   barra de scroll padrão do sistema (cinza/branca, grossa), que destoa
+   completamente do tema escuro. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(241, 238, 192, 0.25) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: rgba(241, 238, 192, 0.25);
+  border-radius: var(--radius-pill);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--accent-2);
 }
 
 button,
@@ -20,6 +81,28 @@ input,
 select,
 textarea {
   font-family: inherit;
+}
+
+/* sem isso, todo botão/input/label usa o anel de foco padrão do navegador
+   — um azul que não é o --accent-2 do site, e que aparecia até depois de
+   um clique de mouse (não só navegação por teclado). :focus-visible only
+   mantém a acessibilidade (teclado) usando a cor certa da paleta, e tira o
+   anel de clique de mouse, que só "sujava" a UI com um azul fora do tema. */
+button:focus,
+input:focus,
+select:focus,
+textarea:focus,
+[tabindex]:focus {
+  outline: none;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
 }
 
 html,
@@ -37,45 +120,85 @@ body {
 }
 
 .app-header {
+  /* mesmo preto da página inteira — sem essa distinção de tom que existia
+     antes entre o topo e o resto. position:relative é o que permite a
+     pílula de navegação (.brand) flutuar centralizada de verdade (ver
+     abaixo), independente da largura do seletor de idioma do outro lado. */
+  position: relative;
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 20px 28px;
-  background: var(--panel);
+  padding: 16px 28px;
+  background: var(--bg);
+  min-height: 64px;
 }
 
+/* nav em pílula flutuante, inspirada no componente "PillNav" do React
+   Bits — só que reimplementada aqui em CSS/JS puro (ver
+   ui/module-switcher.js): esse projeto é estático, sem build step nem
+   dependência nenhuma, então em vez de trazer React+GSAP pro site inteiro
+   só por causa de 1 componente de navegação, a MESMA ideia visual (pílula
+   com um círculo que sobe de baixo ao ativar/passar o mouse) foi recriada
+   com CSS puro, dentro da paleta do site. */
 .brand {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 4px;
+}
+
+.app-logo {
+  /* +15% (era 40px) — o menu do topo inteiro estava pequeno demais. */
+  width: 46px;
+  height: 46px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--panel);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
 }
 
 .app-logo svg {
   display: block;
-  height: 38px;
-  width: auto;
+  height: 28px;
+  width: 28px;
 }
 
 .lang-switcher {
+  /* fica de fora da pílula centralizada, sempre no canto — .brand não
+     ocupa mais espaço no fluxo normal do header (position:absolute), esse
+     margin-left:auto é o que continua empurrando o seletor de idioma pro
+     canto direito sozinho. */
+  margin-left: auto;
+  position: relative;
+  z-index: 1;
   display: flex;
   gap: 2px;
   border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
   padding: 2px;
 }
 
 .lang-button {
   border: none;
+  border-radius: var(--radius-pill);
   background: transparent;
-  padding: 6px 10px;
+  padding: 6px 12px;
   font-size: 12px;
   font-weight: 600;
   color: var(--text-muted);
   cursor: pointer;
+  transform: scale(1);
+  transition: background-color 0.2s ease, color 0.2s ease, transform 0.15s var(--ease-expressive);
 }
 
 .lang-button.active {
-  background: var(--accent);
+  background: var(--accent-2);
   color: var(--accent-text);
 }
 
@@ -87,39 +210,88 @@ body {
 }
 
 .module-tabs {
+  /* a "pílula" de fundo da nav — os botões ficam soltos dentro dela, cada
+     um vira sua PRÓPRIA pílula por cima ao ativar/hover (ver
+     .pill-hover-circle abaixo), igual ao PillNav do React Bits. */
   flex-shrink: 0;
   display: flex;
-  gap: 0;
-  padding: 0 28px;
+  align-items: center;
+  /* +15% (era 40px) */
+  height: 46px;
+  gap: 3px;
+  padding: 3px;
   background: var(--panel);
-  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius-pill);
 }
 
 .module-tabs button,
 .module-tab-disabled {
-  border: 1px solid var(--border);
-  border-bottom: none;
-  margin-right: -1px;
-  background: var(--panel);
-  padding: 16px 24px;
-  font-size: 13px;
+  /* cada aba é a própria pílula: círculo colorido escondido atrás do
+     texto, que "sobe" preenchendo o botão inteiro ao ativar/passar o
+     mouse (isolation:isolate + z-index no texto garantem que ele sempre
+     fique por cima do círculo, mesmo depois que ele cobre o botão). */
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  border: none;
+  margin: 0;
+  background: transparent;
+  /* +15% (era 0 18px / clamp(13px,1.1vw,14px)) */
+  padding: 0 21px;
+  border-radius: var(--radius-pill);
+  font-size: clamp(15px, 1.27vw, 16px);
   font-family: inherit;
   font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  white-space: nowrap;
   text-align: center;
-  color: var(--text-muted);
+  color: var(--text);
   cursor: pointer;
 }
 
-.module-tabs button.active {
+.pill-hover-circle {
+  position: absolute;
+  left: 50%;
+  bottom: -30%;
+  width: 220%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  /* vermelho por padrão (Azulejo) — Mosaico troca pra azul, ver
+     [data-id='mosaic'] abaixo, mesmo revezamento de cor que o resto do
+     app já usa pra diferenciar os 2 módulos. */
   background: var(--accent);
-  border-color: var(--accent);
+  transform: translateX(-50%) scale(0);
+  transform-origin: center bottom;
+  transition: transform 0.4s var(--ease-expressive);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.module-tabs button[data-id='mosaic'] .pill-hover-circle {
+  background: var(--accent-2);
+}
+
+.pill-label {
+  position: relative;
+  z-index: 1;
+  transition: color 0.2s ease;
+}
+
+.module-tabs button:hover .pill-hover-circle,
+.module-tabs button.active .pill-hover-circle {
+  transform: translateX(-50%) scale(1);
+}
+
+.module-tabs button:hover .pill-label,
+.module-tabs button.active .pill-label {
   color: var(--accent-text);
 }
 
 .module-tab-disabled {
-  color: var(--accent);
+  color: var(--text-faint);
   cursor: not-allowed;
 }
 
@@ -141,47 +313,266 @@ body {
   align-items: stretch;
 }
 
-.gi-controls {
+/* coluna da sidebar: barra de formato em cima (menu próprio, fora do
+   painel de ajustes) + o painel de ajustes em si embaixo, dividindo a
+   mesma largura de 320px — é a config mais importante, faz sentido ela
+   ficar por cima do menu de configurações, não perdida no topo do site
+   inteiro. */
+.gi-sidebar-column {
   width: 320px;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+}
+
+/* só existe no desktop — no mobile o formato virou mais uma categoria de
+   ajuste dentro da sidebar (ver isMobileViewport em grid-icons/index.js,
+   perto de onde a barra de categorias é montada), não um elemento próprio
+   aqui em cima. */
+.gi-frame-bar {
+  flex-shrink: 0;
+  position: relative;
+  /* .gi-stage tem padding-top:24px (o preview começa 24px mais baixo que
+     o topo da coluna) — sem essa margem aqui, o formato ficava 24px mais
+     alto que o preview do lado, desalinhados. Só existe no desktop (no
+     mobile o formato mora dentro da sidebar, não tem essa barra própria). */
+  margin-top: 24px;
+}
+
+.gi-controls {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 26px;
   background: var(--panel);
   border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   padding: 24px;
   overflow-y: auto;
   overflow-x: hidden;
+  /* rolagem suave (o scrollTo({behavior:'smooth'}) que leva de volta pro
+     topo ao trocar de categoria já pede isso, mas vale de qualquer forma
+     pra qualquer outro scroll programático) + inércia nativa no touch. */
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
 }
 
 .gi-stage {
+  /* solto — sem moldura (nem cor de fundo própria): o preview é o
+     protagonista, não uma "caixa de resultado" ao lado da caixa de
+     controles. A altura já bate com a sidebar sozinha (align-items:stretch
+     no .gi-layout, ver abaixo), então tirar a moldura não desalinha nada.
+     Linha (conteúdo + trilha de abas Resultado/Variações/Histórico) no
+     desktop — no mobile vira coluna (aba em cima), ver media query. */
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 16px;
+  padding: 24px 0;
+  overflow: hidden;
+}
+
+.gi-stage-content {
+  /* NUNCA rola inteiro — o preview e os botões ficam sempre parados na
+     tela; só a galeria (Variações/Histórico, ver .gi-gallery) tem scroll
+     próprio, porque aquilo sim é uma lista que pode crescer. Só um dos 2
+     filhos (.gi-result-block ou .gi-gallery) fica visível por vez — ver
+     regras :has() mais abaixo. */
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 20px;
-  background: var(--panel);
+  overflow: hidden;
+}
+
+.gi-result-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+  min-height: 0;
+}
+
+.gi-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  justify-content: center;
+}
+
+/* trilha de ícones Novo azulejo/Criar variações/Estou com sorte — só
+   existe (visualmente) no mobile, ao lado do preview (ver media query
+   mais abaixo). No desktop fica display:none; quem aparece lá é a pílula
+   com texto de sempre (.gi-stage-toolbar), sem mudança nenhuma. */
+.gi-stage-toolbar-rail {
+  display: none;
+}
+
+.gi-toolbar-rail-button {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid var(--border);
-  padding: 24px;
-  overflow-y: auto;
-  overflow-x: hidden;
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  color: var(--text-muted);
+  cursor: pointer;
+  transform: scale(1);
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease,
+    transform 0.15s var(--ease-expressive);
+}
+
+.gi-toolbar-rail-button:hover {
+  border-color: var(--accent-2);
+  color: var(--accent-2);
+}
+
+.gi-toolbar-rail-button:active {
+  transform: scale(0.9);
+}
+
+.gi-toolbar-rail-button-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+/* trilha de abas Resultado/Variações/Histórico + toggle "Editar" juntos
+   numa linha só — vertical à direita do preview no desktop (order:1 =
+   depois do conteúdo, numa coluna), horizontal em cima no mobile (ver
+   media query: order:-1 + flex-direction:row). Só um dos 2 blocos da
+   .gi-stage-content aparece por vez, escolhido por qual aba está marcada —
+   ver as regras :has() logo abaixo, que usam o id de cada input direto
+   (funcionam não importa onde a trilha esteja no DOM/CSS). */
+.gi-stage-tabs-row {
+  order: 1;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+  /* era align-self:center — centralizava em relação à ALTURA INTEIRA do
+     stage, não em relação ao preview; numa janela alta (preview
+     relativamente curto perto da altura toda disponível) a trilha
+     "flutuava" solta no meio da tela, longe do canto do preview.
+     flex-start ancora ela sempre no topo, alinhada com o topo do preview
+     (que também começa lá em cima dentro de .gi-stage-content). */
+  align-self: flex-start;
+}
+
+.gi-stage-tabs {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gi-stage-tabs-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* o input em si é invisível (1px, ver acima) — sem isso, navegar por
+   teclado até essas abas não mostrava nenhum indício visual de qual
+   delas está com foco (o anel de foco ficava preso num elemento
+   invisível). Aqui o anel aparece no RÓTULO (o que a pessoa vê) quando o
+   input escondido correspondente ganha foco via teclado. */
+.gi-stage-tabs-input:focus-visible + .gi-stage-tabs-label {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+
+.gi-stage-tabs-label {
+  flex-shrink: 0;
+  text-align: center;
+  white-space: nowrap;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  cursor: pointer;
+  transform: scale(1);
+  transition: background-color 0.25s var(--ease-expressive), border-color 0.25s var(--ease-expressive),
+    color 0.2s ease, transform 0.25s var(--ease-expressive);
+}
+
+.gi-stage-tabs-input:checked + .gi-stage-tabs-label {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  /* mesma "molinha" do indicador das categorias — a pílula ativa dá uma
+     leve estufada em vez de só trocar de cor. */
+  transform: scale(1.04);
+}
+
+/* só um "conteúdo" da área principal aparece por vez — Resultado (preview +
+   toggle + botões) por padrão; Variações/Histórico mostram a galeria no
+   lugar dele. */
+.gi-gallery {
+  display: none;
+}
+
+.gi-stage:has(#gi-stage-tab-variations:checked) .gi-gallery,
+.gi-stage:has(#gi-stage-tab-history:checked) .gi-gallery {
+  display: flex;
+  animation: gi-section-enter 0.32s var(--ease-expressive);
+}
+
+.gi-stage:has(#gi-stage-tab-variations:checked) .gi-result-block,
+.gi-stage:has(#gi-stage-tab-history:checked) .gi-result-block {
+  display: none;
+}
+
+.gi-stage:has(#gi-stage-tab-variations:checked) .gi-gallery-block--history,
+.gi-stage:has(#gi-stage-tab-history:checked) .gi-gallery-block--variations {
+  display: none;
+}
+
+/* o cabeçalho colapsável (▾ VARIAÇÕES / ▾ HISTÓRICO) fazia sentido quando os
+   2 blocos dividiam o mesmo espaço — agora a aba já escolhe qual aparece,
+   então o chevron interno só duplicaria o nome da aba. */
+.gi-gallery-header {
+  display: none;
 }
 
 .gi-result-title {
-  flex-shrink: 0;
-  align-self: flex-start;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-faint);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  /* "RESULTADO" tirado — o preview já fala por si, sem precisar de rótulo
+     em cima dele. */
+  display: none;
 }
 
 .gi-stage-toolbar {
   flex-shrink: 0;
   width: 100%;
-  max-width: 540px;
+  /* acompanha a largura ATUAL do preview (--gi-preview-w, setada via JS em
+     updatePreviewFrame — grid-icons/index.js), não um teto fixo de 540px:
+     quando o preview encolhe (janela baixa, formato retrato/story...) a
+     pílula de botões encolhe junto, em vez de sobrar enorme e
+     desproporcional do lado de um preview pequeno. */
+  max-width: var(--gi-preview-w, 540px);
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
@@ -190,19 +581,39 @@ body {
 
 .gi-stage-toolbar .control-button {
   flex: 1;
+  /* idem — fonte/respiro proporcionais à largura da tela (não um valor
+     fixo), pra nunca ficar "grande demais sem motivo" numa janela mais
+     estreita onde o preview/pílula já encolheram. */
+  font-size: clamp(11px, 1.3vw, 14px);
+  padding: clamp(7px, 0.9vw, 10px) clamp(9px, 1.2vw, 14px);
 }
 
 .gi-preview-wrap {
+  /* o tamanho (width/height, já calculado pra nunca estourar a tela) e o
+     fundo são ajustados via JS (updatePreviewFrame + computePreviewBoxSize,
+     em grid-icons/index.js) toda vez que o "Formato de exportação" muda ou
+     a janela redimensiona — aqui só a transição suave e o container que
+     centraliza o preview dentro da moldura escolhida. */
   flex-shrink: 0;
+  /* position:relative é o que faltava: sem isso, o overlay de edição
+     (.gi-grid-editor, position:absolute; inset:0) não tinha um ancestral
+     posicionado aqui perto e ia se ancorar em qualquer um mais acima na
+     árvore — cobrindo a tela inteira em vez de só a arte do preview. */
   position: relative;
-  width: 100%;
-  max-width: 540px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  /* sem cantos arredondados aqui — mesmo um raio pequeno recorta uma
+     lasca do próprio padrão bem na borda (formas que a gente quer
+     ver inteiras até a beirada). */
+  transition: width 0.35s ease, height 0.35s ease, background-color 0.35s ease;
 }
 
 .gi-preview {
-  width: 100%;
   overflow: hidden;
-  background: repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 0 0 / 20px 20px;
+  background: repeating-conic-gradient(rgba(255, 255, 255, 0.07) 0% 25%, rgba(255, 255, 255, 0.02) 0% 50%) 0 0 / 20px 20px;
+  transition: width 0.35s ease, height 0.35s ease;
 }
 
 .gi-preview svg {
@@ -214,27 +625,40 @@ body {
 }
 
 .gi-grid-edit-toggle.control {
+  /* agora mora ao lado da trilha de abas (.gi-stage-tabs-row), não numa
+     faixa própria de largura inteira acima do preview — compacto, rótulo
+     e switch lado a lado. */
   flex-shrink: 0;
-  width: 100%;
-  max-width: 540px;
-  justify-content: flex-start;
-  gap: 12px;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.gi-grid-edit-toggle .control-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
 }
 
 .gi-grid-editor {
+  /* top/left/width/height vêm sempre de updateGridEditorOverlayGeometry()
+     (grid-icons/index.js) — o overlay cobre só UM ladrilho do ícone-base
+     (sempre quadrado), nunca o retângulo inteiro quando o formato de
+     exportação repete o ícone (ver comentário lá). */
   position: absolute;
-  inset: 0;
   display: grid;
   cursor: grab;
 }
 
 .gi-grid-editor-cell {
-  border: 1px dashed rgba(242, 96, 28, 0.35);
+  border: 1px dashed rgba(234, 69, 48, 0.4);
   touch-action: none;
 }
 
 .gi-grid-editor-cell:hover {
-  background: rgba(242, 96, 28, 0.12);
+  background: rgba(58, 161, 216, 0.16);
 }
 
 .gi-grid-drag-ghost {
@@ -262,6 +686,7 @@ body {
   padding: 8px;
   background: var(--panel);
   border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   transform: translate(-50%, 10px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
 }
@@ -283,11 +708,12 @@ body {
   height: 24px;
   padding: 0;
   border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   cursor: pointer;
 }
 
 .gi-color-menu-swatch:hover {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--accent-2);
   outline-offset: 1px;
 }
 
@@ -296,6 +722,7 @@ body {
   height: 24px;
   padding: 2px;
   border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   background: var(--panel);
   color: var(--text);
   cursor: pointer;
@@ -305,7 +732,7 @@ body {
 }
 
 .gi-color-menu-shape:hover {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--accent-2);
   outline-offset: 1px;
 }
 
@@ -316,19 +743,36 @@ body {
 
 .gi-gallery {
   width: 100%;
-  flex-shrink: 0;
-  /* limita a própria altura e rola por dentro quando o histórico/variações
-     acumulam muita coisa — sem isso, uma vez que o conteúdo passa da altura
-     do painel, é o .gi-stage inteiro que rola, empurrando o preview do ícone
-     pra fora da tela (o bug que a regra de layout no topo deste arquivo
-     existe justamente pra evitar). flex-shrink:0 (em vez de flex:1) evita
-     o outro bug: ficar espremida a quase-zero pelos irmãos flex-shrink:0. */
+  /* mesma largura do preview/toolbar (ver .gi-preview-wrap) — sem isso a
+     galeria esticava pra largura inteira do stage e os cartões/cabeçalhos
+     ficavam alinhados à esquerda longe do preview, que fica centralizado. */
+  max-width: 540px;
+  /* única parte do .gi-stage que rola — preenche o espaço que sobra
+     abaixo do preview/botões (flex:1) e nunca deixa o .gi-stage inteiro
+     rolar (min-height:0 é o que permite ela encolher e ativar o próprio
+     scroll em vez de estourar o pai). O teto de 42vh evita que ela tome
+     conta da tela inteira quando tem espaço de sobra. */
+  flex: 1 1 auto;
+  min-height: 0;
   max-height: 42vh;
   overflow-y: auto;
+  /* display fica só na regra de cima (default none, flex quando a aba
+     Variações/Histórico está marcada) — repetir "flex" aqui destravava a
+     galeria e ela aparecia junto com o Resultado o tempo todo. */
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.gi-gallery-block {
+  /* header + grid de miniaturas de cada bloco (Variações, Histórico) —
+     mesmo gap que .gi-gallery já usava entre os 4 filhos soltos, só que
+     agrupados de dois em dois agora (ver comentário no index.js). */
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 20px;
+  width: 100%;
 }
 
 .gi-gallery-header {
@@ -379,7 +823,8 @@ body {
   height: 96px;
   padding: 0;
   border: 1px solid var(--border);
-  background: repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 0 0 / 12px 12px;
+  border-radius: var(--radius-md);
+  background: repeating-conic-gradient(rgba(255, 255, 255, 0.07) 0% 25%, rgba(255, 255, 255, 0.02) 0% 50%) 0 0 / 12px 12px;
   cursor: pointer;
   overflow: hidden;
 }
@@ -391,7 +836,7 @@ body {
 
 .gi-variation-thumb:hover,
 .gi-history-thumb:hover {
-  border-color: var(--accent);
+  border-color: var(--accent-2);
 }
 
 .gi-variation-thumb svg,
@@ -406,17 +851,69 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
+}
+
+.frame-picker-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.frame-picker-tile {
+  flex: 1;
+  min-width: 50px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 6px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text-muted);
+  cursor: pointer;
+  height: 48px;
+  transform: scale(1);
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease, transform 0.15s var(--ease-expressive);
+}
+
+.frame-picker-tile:hover {
+  border-color: var(--accent-2);
+}
+
+.frame-picker-tile.active {
+  /* mesmo estilo da opção marcada no seletor de idioma (.lang-button.active)
+     — fundo azul cheio, não um vermelho fraco. */
+  border-color: var(--accent-2);
+  color: var(--accent-text);
+  background: var(--accent-2);
+}
+
+.frame-picker-shape {
+  flex-shrink: 0;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+}
+
+.frame-picker-caption {
+  font-size: 10px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 /* shared controls */
 
 .control-section {
+  /* sem o traço aqui a lista de seções ficava confusa (onde uma acaba e a
+     outra começa) — volta o divisor, só que bem mais discreto que o
+     original (opacidade baixa em vez da cor cheia do tema). */
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  padding-top: 20px;
+  padding-top: 28px;
   border-top: 1px solid var(--border);
 }
 
@@ -457,6 +954,7 @@ body {
 }
 
 .control-section-randomize {
+  /* ícone solto, sem caixinha com borda — menos "formulário", mais leve. */
   flex-shrink: 0;
   width: 22px;
   height: 22px;
@@ -464,16 +962,15 @@ body {
   align-items: center;
   justify-content: center;
   padding: 0;
-  border: 1px solid var(--border);
-  background: var(--panel);
+  border: none;
+  background: none;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 14px;
   cursor: pointer;
 }
 
 .control-section-randomize:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-2);
 }
 
 .control-section-body {
@@ -498,8 +995,12 @@ body {
 }
 
 .control-label {
+  /* rótulo curto (ex. "Contorno") ainda pode carregar um pouco de peso,
+     mas texto de explicação mais longo (ex. a legenda do controle fino de
+     blocos) usa a mesma classe — 500 em vez de 600 deixa isso passável nos
+     dois casos, sem parecer um textão em negrito. */
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-muted);
 }
 
@@ -521,6 +1022,7 @@ body {
   height: 34px;
   flex-shrink: 0;
   border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   object-fit: cover;
 }
 
@@ -536,6 +1038,7 @@ body {
   text-align: center;
   padding: 6px 8px;
   border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   font-size: 12px;
   color: var(--text);
   background: var(--panel);
@@ -543,7 +1046,7 @@ body {
 
 .control-slider input[type="range"] {
   flex: 1;
-  accent-color: var(--accent);
+  accent-color: var(--accent-2);
   height: 20px;
   cursor: pointer;
 }
@@ -557,35 +1060,43 @@ body {
 }
 
 .toggle-switch {
+  /* desligado = vermelho sólido, ligado = azul sólido — as duas cores da
+     paleta, cheias as duas (nada de meio-tom/transparência num estado e
+     cor cheia no outro). */
   flex-shrink: 0;
   position: relative;
   width: 40px;
   height: 22px;
   padding: 2px;
-  border: 1px solid var(--border);
-  background: var(--track-off);
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  border-radius: var(--radius-md);
   cursor: pointer;
+  transform: scale(1);
+  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.15s var(--ease-expressive);
 }
 
 .toggle-switch-knob {
   display: block;
   width: 16px;
   height: 16px;
-  border-radius: 50%;
   background: var(--panel);
   border: 1px solid var(--border);
-  transition: transform 0.15s ease;
+  border-radius: 50%;
+  /* mola leve em vez de deslizar seco — pequeno "estica e assenta"
+     (--ease-expressive) toda vez que liga/desliga. */
+  transition: transform 0.3s var(--ease-expressive);
 }
 
 .toggle-switch.on {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-2);
+  border-color: var(--accent-2);
 }
 
 .toggle-switch.on .toggle-switch-knob {
   transform: translateX(18px);
   background: var(--accent-text);
-  border-color: var(--accent);
+  border-color: var(--accent-2);
 }
 
 .preset-save-row {
@@ -598,6 +1109,7 @@ body {
   min-width: 0;
   padding: 8px 10px;
   border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   background: var(--panel);
   color: var(--text);
   font-size: 13px;
@@ -621,6 +1133,7 @@ body {
   text-align: left;
   padding: 8px 10px;
   border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   background: var(--panel);
   color: var(--text);
   font-size: 13px;
@@ -631,24 +1144,29 @@ body {
 }
 
 .preset-load-button:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--accent-2);
+  color: var(--accent-2);
 }
 
 .preset-delete-button {
   flex-shrink: 0;
-  width: 26px;
-  height: 26px;
+  /* era 26px — abaixo do mínimo recomendado de alvo de toque (~32-44px);
+     32px ainda cabe ao lado do nome do preset sem dominar a linha. */
+  width: 32px;
+  height: 32px;
   border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   background: var(--panel);
   color: var(--text-muted);
   font-size: 13px;
   cursor: pointer;
+  transform: scale(1);
+  transition: border-color 0.15s ease, color 0.15s ease, transform 0.15s var(--ease-expressive);
 }
 
 .preset-delete-button:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--accent-2);
+  color: var(--accent-2);
 }
 
 .theme-row {
@@ -665,7 +1183,8 @@ body {
   align-items: center;
   justify-content: center;
   border: 1px solid var(--border);
-  background: var(--panel);
+  border-radius: var(--radius-md);
+  background: transparent;
   color: var(--text-muted);
   font-size: 16px;
   cursor: pointer;
@@ -673,8 +1192,8 @@ body {
 }
 
 .theme-arrow-button:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--accent-2);
+  color: var(--accent-2);
 }
 
 .theme-combo {
@@ -690,11 +1209,16 @@ body {
   gap: 8px;
   padding: 7px 10px;
   border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   background: var(--panel);
   color: var(--text);
   font-size: 14px;
   font-family: inherit;
   cursor: pointer;
+}
+
+.theme-combo-trigger:hover {
+  border-color: var(--accent-2);
 }
 
 .theme-combo-label {
@@ -722,6 +1246,9 @@ body {
   width: 12px;
   height: 12px;
   border: 1px solid var(--border);
+  /* --radius-md (10px) num quadrado de 12px vira quase um círculo mole —
+     --radius-sm mantém a bolinha reconhecível como indicador de cor. */
+  border-radius: var(--radius-sm);
 }
 
 .theme-combo-panel {
@@ -733,8 +1260,9 @@ body {
   max-height: 320px;
   overflow-y: auto;
   border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   background: var(--panel);
-  box-shadow: 0 4px 0 rgba(23, 20, 15, 0.15);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
 }
 
 .theme-combo-row {
@@ -758,7 +1286,10 @@ body {
 }
 
 .theme-combo-row:hover {
-  background: var(--track-off);
+  /* --track-off (0.14 opacity) sozinho é sutil demais pra sinalizar hover
+     num dropdown — mais visível aqui sem mudar a variável compartilhada
+     (ela também é usada como cor de borda em outros lugares). */
+  background: rgba(241, 238, 192, 0.22);
 }
 
 .theme-combo-row.active {
@@ -769,6 +1300,7 @@ body {
 .control-select select {
   padding: 8px 10px;
   border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   font-size: 14px;
   font-family: inherit;
   background: var(--panel);
@@ -795,6 +1327,7 @@ body {
   width: 34px;
   height: 34px;
   border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   padding: 0;
   background: none;
   cursor: pointer;
@@ -829,8 +1362,8 @@ body {
   height: 16px;
   line-height: 14px;
   padding: 0;
-  border-radius: 50%;
   border: 1px solid var(--border);
+  border-radius: 50%;
   background: var(--panel);
   color: var(--text-muted);
   font-size: 11px;
@@ -838,8 +1371,8 @@ body {
 }
 
 .swatch-remove:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--accent-2);
+  color: var(--accent-2);
 }
 
 .harmony-row {
@@ -856,6 +1389,9 @@ body {
   width: 34px;
   height: 34px;
   border: 1px dashed var(--border);
+  /* faltava — os outros chips de cor ao lado (34x34px também) já usam
+     --radius-md, esse ficava com canto reto destoando da fileira. */
+  border-radius: var(--radius-md);
   background: none;
   color: var(--text-muted);
   font-size: 18px;
@@ -864,8 +1400,8 @@ body {
 }
 
 .swatch-add:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--accent-2);
+  color: var(--accent-2);
 }
 
 .checkbox-row {
@@ -884,7 +1420,7 @@ body {
 }
 
 .checkbox-chip input[type="checkbox"] {
-  accent-color: var(--accent);
+  accent-color: var(--accent-2);
 }
 
 .shape-toggle-row {
@@ -904,7 +1440,11 @@ body {
   align-items: center;
   justify-content: center;
   border: 1px solid var(--border);
-  background: var(--bg);
+  border-radius: var(--radius-md);
+  /* era var(--bg) — a MESMA cor do fundo da página, então o botão
+     inativo ficava invisível (só a borda fininha denunciava que ele
+     existe). --panel destaca ele do fundo mesmo sem estar selecionado. */
+  background: var(--panel);
   color: var(--text-muted);
   cursor: pointer;
 }
@@ -915,7 +1455,7 @@ body {
 }
 
 .shape-toggle:hover {
-  border-color: var(--accent);
+  border-color: var(--accent-2);
 }
 
 .shape-toggle.active {
@@ -935,12 +1475,18 @@ body {
   height: 26px;
   padding: 0;
   border: 1px solid var(--border);
+  /* --radius-md era grande demais pros 26px do swatch, deixava ele
+     "borrado" em vez de um quadradinho de cor nítido. */
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  opacity: 0.35;
+  /* 0.35 deixava a cor de verdade quase irreconhecível no estado
+     desmarcado — 0.6 ainda diferencia claramente do "active" (opacity:1 +
+     borda grossa), mas dá pra ver a cor real sem apertar os olhos. */
+  opacity: 0.6;
 }
 
 .color-toggle-swatch:hover {
-  border-color: var(--accent);
+  border-color: var(--accent-2);
 }
 
 .color-toggle-swatch.active {
@@ -953,17 +1499,24 @@ body {
   height: 28px;
   margin: 6px 12px 18px;
   border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   cursor: copy;
 }
 
 .gradient-stop-handle {
   position: absolute;
   top: 100%;
-  width: 14px;
-  height: 14px;
-  margin-left: -7px;
+  /* era 14px — pequeno demais pra arrastar com o dedo com precisão;
+     18px/margem -9px mantém centralizado na mesma posição. */
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
   padding: 0;
   border: 1px solid var(--border);
+  /* --radius-md arredondava demais os "cantos" do losango (é um quadrado
+     rotacionado 45°) — virava um blob em vez de um losango reconhecível
+     como alça de arraste. --radius-sm mantém a ponta nítida. */
+  border-radius: var(--radius-sm);
   background: var(--panel);
   cursor: grab;
   transform: rotate(45deg);
@@ -989,6 +1542,7 @@ body {
 
 .gradient-stop-remove {
   border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   background: none;
   color: var(--text-muted);
   cursor: pointer;
@@ -997,8 +1551,8 @@ body {
 }
 
 .gradient-stop-remove:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--accent-2);
+  color: var(--accent-2);
 }
 
 .gradient-stop-remove:disabled {
@@ -1009,27 +1563,47 @@ body {
 .control-button {
   padding: 10px 14px;
   border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   background: var(--panel);
   color: var(--text);
   font-size: 14px;
   cursor: pointer;
+  transform: scale(1);
+  transition: border-color 0.15s ease, transform 0.15s var(--ease-expressive);
 }
 
 .control-button:hover {
-  border-color: var(--accent);
+  border-color: var(--accent-2);
+}
+
+/* feedback de toque — encolhe de leve ao pressionar (dedo ou clique) em
+   tudo que é botão/aba/pílula clicável do app. Sem isso, num touchscreen
+   não tem confirmação nenhuma de "eu toquei aqui" até o efeito (a troca de
+   painel, o preview mudando) acontecer — parece menos responsivo/vivo do
+   que realmente é. */
+.control-button:active,
+.gi-stage-tabs-label:active,
+.gi-mobile-category-tabs-label:active,
+.frame-picker-tile:active,
+.lang-button:active,
+.toggle-switch:active,
+.draw-close-btn:active,
+.preset-delete-button:active {
+  transform: scale(0.94);
 }
 
 .control-button-primary {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-text);
-  font-weight: 600;
+  font-weight: 700;
+  border-radius: var(--radius-pill);
 }
 
 .draw-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(23, 20, 15, 0.6);
+  background: rgba(0, 0, 0, 0.7);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1039,6 +1613,7 @@ body {
 .draw-modal {
   background: var(--panel);
   border: 2px solid var(--border);
+  border-radius: var(--radius-lg);
   padding: 20px;
   display: flex;
   flex-direction: column;
@@ -1061,6 +1636,7 @@ body {
 
 .draw-close-btn {
   border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   background: var(--panel);
   color: var(--text);
   font-size: 18px;
@@ -1068,15 +1644,18 @@ body {
   width: 28px;
   height: 28px;
   cursor: pointer;
+  transform: scale(1);
+  transition: border-color 0.15s ease, color 0.15s ease, transform 0.15s var(--ease-expressive);
 }
 
 .draw-close-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--accent-2);
+  color: var(--accent-2);
 }
 
 .draw-canvas {
   border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   background: #ffffff;
   cursor: crosshair;
   touch-action: none;
@@ -1092,7 +1671,7 @@ body {
 
 .draw-brush-row input[type="range"] {
   flex: 1;
-  accent-color: var(--accent);
+  accent-color: var(--accent-2);
 }
 
 .draw-actions {
@@ -1120,6 +1699,7 @@ body {
   gap: 26px;
   background: var(--panel);
   border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   padding: 24px;
   overflow-y: auto;
   overflow-x: hidden;
@@ -1134,19 +1714,14 @@ body {
   gap: 20px;
   background: var(--panel);
   border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   padding: 24px;
   overflow-y: auto;
   overflow-x: hidden;
 }
 
 .mo-result-title {
-  flex-shrink: 0;
-  align-self: flex-start;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-faint);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  display: none;
 }
 
 .mo-preview-wrap {
@@ -1157,7 +1732,7 @@ body {
 .mo-preview {
   width: 100%;
   overflow: hidden;
-  background: repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 0 0 / 20px 20px;
+  background: repeating-conic-gradient(rgba(255, 255, 255, 0.07) 0% 25%, rgba(255, 255, 255, 0.02) 0% 50%) 0 0 / 20px 20px;
 }
 
 .mo-preview svg {
@@ -1170,7 +1745,7 @@ body {
 .mo-repeat-preview-wrap {
   flex-shrink: 0;
   width: 100%;
-  max-width: 540px;
+  max-width: 720px;
 }
 
 .mo-repeat-preview-title {
@@ -1192,6 +1767,7 @@ body {
   width: 100%;
   aspect-ratio: 1;
   border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(3, 1fr);
@@ -1209,13 +1785,13 @@ body {
   opacity: 1;
   position: relative;
   z-index: 1;
-  border: 1px dashed rgba(242, 96, 28, 0.35);
+  border: 1px dashed rgba(234, 69, 48, 0.4);
 }
 
 .mo-stage-toolbar {
   flex-shrink: 0;
   width: 100%;
-  max-width: 540px;
+  max-width: 720px;
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
@@ -1231,8 +1807,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
+  padding-top: 24px;
 }
 
 .mo-file-input {
@@ -1245,6 +1820,7 @@ body {
   width: 20px;
   height: 20px;
   border: 1px solid var(--border);
+  border-radius: var(--radius-md);
 }
 
 /* icon-select — mesmo visual do theme-combo (Azulejo), genérico: cada opção
@@ -1261,6 +1837,7 @@ body {
   gap: 8px;
   padding: 7px 10px;
   border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   background: var(--panel);
   color: var(--text);
   font-size: 14px;
@@ -1292,8 +1869,9 @@ body {
   max-height: 320px;
   overflow-y: auto;
   border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   background: var(--panel);
-  box-shadow: 0 4px 0 rgba(23, 20, 15, 0.15);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
 }
 
 .icon-select-row {
@@ -1317,10 +1895,429 @@ body {
 }
 
 .icon-select-row:hover {
-  background: var(--track-off);
+  /* mesmo motivo do .theme-combo-row:hover acima. */
+  background: rgba(241, 238, 192, 0.22);
 }
 
 .icon-select-row.active {
   color: var(--accent);
   font-weight: 600;
+}
+
+/* ==========================================================================
+   mobile — abaixo de 768px os dois painéis (controles + área de trabalho)
+   não cabem lado a lado.
+
+   1ª tentativa: empilhar os dois e deixar a página inteira rolar — ruim,
+   virava "rolar tudo pra ver o preview". 2ª tentativa: abas Preview/
+   Controles alternando um painel por vez — também ruim, do jeito oposto
+   (pra ver o efeito de um ajuste você tinha que trocar de aba toda hora).
+   3ª tentativa: preview fixo (sem crescer) + controles ocupando o resto,
+   mas com teto de altura + scroll no preview pra quando a galeria de
+   variações/histórico tava aberta — ruim de novo, um preview que também
+   rola é desconfortável de mexer.
+
+   Solução final: o preview em si (resultado + toggle de controle fino +
+   botões) NUNCA rola — sem título "Resultado", sem a legenda do controle
+   fino (só o switch), cabe inteiro sem precisar de scroll, do tamanho do
+   próprio conteúdo (.gi-stage/.mo-stage com flex:0 0 auto, sem
+   max-height). Variações e Histórico saem de dentro dessa área e viram
+   abas próprias (.gi-mobile-tabs, só existe/aparece no mobile) — só uma
+   dessas 3 "telas" (Resultado/Variações/Histórico) aparece por vez dentro
+   do preview, com :has() (ver adiante), sem JS de estado. Só a aba de
+   Variações/Histórico tem scroll interno (é uma lista, faz sentido rolar;
+   .gi-gallery já limitava a própria altura antes disso, reaproveitado
+   aqui). Os controles (.gi-controls/.mo-controls) continuam ocupando o
+   resto da tela, sempre visíveis, sempre roláveis, e no mobile já entram
+   com todas as seções abertas (menos espaço sobrando = mais fácil perder
+   de vista o que existe se começar tudo fechado; ver isMobileViewport em
+   grid-icons/index.js).
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  /* header: uma linha só, sempre — logo + abas de módulo de um lado,
+     PT/EN do outro, tudo mais compacto (menos gap/padding/fonte) pra
+     caber sem quebrar. Quebrar em 2 linhas tomava espaço vertical demais
+     numa tela já apertada. A pílula flutuante centralizada (.brand no
+     desktop) não cabe ao lado do seletor de idioma numa tela estreita —
+     aqui ela volta a ficar no fluxo normal, encostada no logo à esquerda,
+     como era antes; só o visual em pílula das abas (ganho novo) continua. */
+  .app-header {
+    justify-content: space-between;
+    padding: 12px 14px;
+  }
+
+  .brand {
+    position: static;
+    transform: none;
+    gap: 8px;
+  }
+
+  .module-tabs {
+    height: 34px;
+    gap: 2px;
+    padding: 2px;
+  }
+
+  .module-tabs button,
+  .module-tab-disabled {
+    padding: 0 12px;
+    font-size: 12px;
+  }
+
+  .app-logo {
+    width: 32px;
+    height: 32px;
+  }
+
+  .app-logo svg {
+    height: 20px;
+    width: 20px;
+  }
+
+  .lang-switcher {
+    margin-left: 0;
+    gap: 1px;
+  }
+
+  .lang-button {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+
+  .module-content {
+    padding: 12px;
+  }
+
+  .gi-layout,
+  .mo-layout {
+    flex-direction: column;
+    gap: 10px;
+    /* rede de segurança: nas contas de tamanho (ver computePreviewBoxSize
+       em grid-icons/index.js) o preview sempre deixa espaço reservado pro
+       painel de ajustes, mas numa tela realmente curta demais (bem menor
+       que qualquer celular de verdade) ainda pode sobrar menos do que o
+       necessário — com overflow:auto aqui, dá pra rolar a página inteira
+       até o menu de categorias em vez dele ficar impossível de alcançar. */
+    overflow-y: auto;
+  }
+
+  .gi-stage,
+  .mo-stage {
+    /* preview antes dos controles no visual (a pessoa quer ver o ícone
+       primeiro), mesmo os controles vindo antes no DOM. */
+    order: -1;
+    width: 100%;
+    max-width: none;
+    /* do tamanho do próprio conteúdo, nunca com scroll próprio — ver
+       comentário grandão acima. Padding vertical menor que no desktop —
+       numa tela de celular mais baixa (tipo iPhone SE) cada pixel de
+       sobra aqui é espaço a menos brigando com o mínimo do painel de
+       ajustes embaixo (ver min-height em .gi-sidebar-column/.mo-controls
+       e controlsMinHeight em computePreviewBoxSize, grid-icons/index.js). */
+    flex: 0 0 auto;
+    overflow: visible;
+    padding: 12px 0;
+  }
+
+  /* no desktop .gi-stage é uma linha (conteúdo + trilha de abas lado a
+     lado) — no celular vira coluna, com a trilha virando uma barra de
+     pílulas horizontal em cima (ver .gi-stage-tabs abaixo). */
+  .gi-stage {
+    flex-direction: column;
+  }
+
+  /* botões abaixo do preview: menores que no desktop — o preview é o
+     protagonista da tela, os botões são coadjuvante. */
+  .gi-stage-toolbar .control-button,
+  .mo-stage-toolbar .control-button {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+
+  /* trio "Novo azulejo / Criar variações / Estou com sorte" — no mobile
+     vira ícones numa trilha ao LADO do preview (menos altura ocupada,
+     mais espaço pro painel de ajustes logo abaixo); a pílula com texto
+     (só existe pro desktop) some daqui. */
+  .gi-stage-toolbar {
+    display: none;
+  }
+
+  .gi-stage-toolbar-rail {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .gi-controls {
+    /* menos padding que no desktop — libera espaço vertical extra numa
+       tela de celular mais baixa (ver comentário em .gi-stage acima). */
+    padding: 16px;
+  }
+
+  .gi-sidebar-column,
+  .mo-controls {
+    width: 100%;
+    max-width: none;
+    /* ocupa todo o resto da altura disponível — sempre visível junto com
+       o preview, nunca escondido atrás de uma aba (quem rola por dentro é
+       o .gi-controls aninhado — ver regra dele, sem media query nenhuma,
+       já vale nos dois tamanhos de tela). */
+    flex: 1 1 auto;
+    /* nunca menor que isso, nem numa tela curta — sem esse piso, flex:1 1
+       auto encolhia esse painel (e o menu de categorias sticky dentro
+       dele) até sobrar menos altura do que ele precisa pra existir, e
+       como flex-shrink não gera overflow, não tinha nem como rolar até
+       ele (ver overflow-y no .gi-layout/.mo-layout acima). min() com vh
+       em vez de um número fixo: numa tela realmente curta (celular
+       deitado, por ex.) o piso encolhe proporcionalmente em vez de forçar
+       overflow/scroll sempre que 260px não caberia de jeito nenhum. */
+    min-height: min(260px, 40vh);
+  }
+
+  /* trilha de abas Resultado/Variações/Histórico + toggle Editar — no
+     desktop é uma coluna vertical à direita do preview (ver regra base
+     .gi-stage-tabs-row); no mobile vira uma linha só horizontal em cima do
+     conteúdo: abas (pílulas, ocupando o espaço que sobra) + o switch
+     Editar encostado do lado, sem faixas separadas empilhadas comendo
+     altura antes do preview aparecer. */
+  .gi-stage-tabs-row {
+    order: -1;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .gi-stage-tabs {
+    flex: 1;
+    min-width: 0;
+    flex-direction: row;
+    gap: 4px;
+    padding: 3px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    background: var(--bg);
+  }
+
+  .gi-stage-tabs-label {
+    flex: 1;
+    padding: 8px 6px;
+  }
+
+  .gi-grid-edit-toggle.control {
+    flex-shrink: 0;
+  }
+
+  .theme-combo-panel,
+  .icon-select-panel {
+    max-height: 45vh;
+  }
+
+  /* aba de categorias da sidebar (Tema/Grade/Detalhe/Cores/...) — estilo
+     Lightroom mobile de verdade: ícone em cima, nome embaixo (não só
+     texto — bem mais fácil de reconhecer de relance rolando a barra
+     horizontal), fixa embaixo do painel de ajustes (position:sticky) —
+     não importa quanto o conteúdo da categoria aberta role, a barra de
+     categorias continua sempre visível e alcançável com o polegar, do
+     jeito que apps de edição de foto resolvem isso. Ver grid-icons/
+     index.js (monta o markup, ui/categoryIcons.js os ícones) e
+     ui/controls/section.js (data-section-id em cada .control-section). */
+  .gi-mobile-category-tabs {
+    position: sticky;
+    /* os -16px (bottom/margin) batem com o padding de .gi-controls no
+       mobile (16px, ver regra dela acima) — sem isso alinhado, a barra
+       ficava com uma folga (ou cortava) embaixo em vez de grudar rente. */
+    bottom: -16px;
+    margin: 12px -16px -16px;
+    display: flex;
+    flex-shrink: 0;
+    gap: 4px;
+    overflow-x: auto;
+    /* rolagem horizontal com "click" de parada em cada ícone — parece
+       nativo (roda com inércia e sempre assenta alinhada em vez de parar
+       no meio de um ícone). */
+    scroll-snap-type: x proximity;
+    padding: 8px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    /* sombra sutil pra cima — sinaliza que essa barra "flutua" por cima
+       do conteúdo que rola por trás dela, não é só mais uma linha na
+       lista (mesma linguagem de elevação do Material). */
+    box-shadow: 0 -8px 16px rgba(0, 0, 0, 0.35);
+  }
+
+  .gi-mobile-category-tabs-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* mesma razão do .gi-stage-tabs-input:focus-visible acima — o anel de
+     foco (teclado) precisa aparecer no rótulo visível, não no input de
+     1px escondido atrás dele. */
+  .gi-mobile-category-tabs-input:focus-visible + .gi-mobile-category-tabs-label {
+    outline: 2px solid var(--accent-2);
+    outline-offset: 2px;
+  }
+
+  .gi-mobile-category-tabs-label {
+    scroll-snap-align: center;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    /* 3px/9px ficava apertado demais pra ler de relance — 4px/10px ainda
+       cabe nos 56px de largura, mais confortável. */
+    gap: 4px;
+    width: 56px;
+    padding: 6px 4px;
+    border-radius: var(--radius-sm);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.01em;
+    text-align: center;
+    color: var(--text-muted);
+    cursor: pointer;
+    transform: scale(1);
+    transition: color 0.2s ease, transform 0.15s var(--ease-expressive);
+  }
+
+  .gi-mobile-category-tabs-icon {
+    /* "indicador ativo" em pílula atrás do ícone — como a barra de
+       navegação do Material 3: a categoria marcada não muda só a cor, ela
+       ganha uma pílula cheia atrás do ícone, que "estica" pra dentro com
+       uma leve mola (ver --ease-expressive) em vez de só aparecer/sumir. */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 22px;
+    border-radius: var(--radius-pill);
+    background: transparent;
+    /* era 0.85 — o "pop" ficava exagerado/desconectado do resto do
+       feedback de toque do app (que usa 0.94 no :active); 0.92 ainda
+       deixa o morph do indicador perceptível, sem destoar tanto. */
+    transform: scale(0.92);
+    transition: background-color 0.25s var(--ease-expressive), transform 0.3s var(--ease-expressive);
+  }
+
+  .gi-mobile-category-tabs-icon svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .gi-mobile-category-tabs-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+    transition: color 0.2s ease;
+  }
+
+  .gi-mobile-category-tabs-input:checked + .gi-mobile-category-tabs-label {
+    color: var(--accent);
+  }
+
+  .gi-mobile-category-tabs-input:checked + .gi-mobile-category-tabs-label .gi-mobile-category-tabs-icon {
+    background: var(--accent);
+    color: var(--accent-text);
+    transform: scale(1);
+  }
+
+  /* cada seção só aparece quando a aba correspondente está marcada — o
+     chevron/colapso interno de cada seção continua existindo no DOM (não
+     precisou mexer nisso), só que agora quem manda na visibilidade é a
+     aba, não mais o clique no próprio cabeçalho da seção. */
+  .control-section[data-section-id] {
+    display: none;
+    /* no mobile só UMA seção aparece por vez (a aba de categoria decide
+       qual) — o traço/respiro de cima (pensado pra separar seções
+       empilhadas no desktop) e o cabeçalho com nome+chevron não fazem
+       sentido aqui: não tem nada acima pra separar, e o nome já repete o
+       nome do ícone da aba logo embaixo. */
+    padding-top: 0;
+    border-top: none;
+  }
+
+  /* só o nome+chevron some (já repete o nome do ícone da aba logo
+     embaixo) — o botão de "randomizar" da seção (quando existe) continua,
+     é uma ação de verdade, não só decoração. */
+  .control-section[data-section-id] .control-section-toggle {
+    display: none;
+  }
+
+  .control-section[data-section-id] .control-section-randomize {
+    margin-left: auto;
+  }
+
+  /* IMPORTANTE: era ".gi-mobile-category-tabs:has(...) ~ [data-section-id]"
+     (combinador de irmão geral, "~") — só funciona quando o alvo vem DEPOIS
+     do elemento de referência no DOM. A barra de categorias é inserida no
+     fim da sidebar (depois de todas as seções, ver index.js), ou seja,
+     ela SEMPRE vem depois das seções — o "~" nunca conseguia acertar
+     nenhuma delas, então nenhuma categoria jamais mostrava conteúdo
+     nenhum (com todo o resto escondido, o mobile inteiro parecia quebrado:
+     não tinha como ajustar nada). Corrigido usando :has() no ancestral
+     comum (.gi-controls) + seletor descendente — não depende de ordem. */
+  .gi-controls:has(#gi-cat-format:checked) [data-section-id='format'],
+  .gi-controls:has(#gi-cat-theme:checked) [data-section-id='theme'],
+  .gi-controls:has(#gi-cat-reference:checked) [data-section-id='reference'],
+  .gi-controls:has(#gi-cat-grid:checked) [data-section-id='grid'],
+  .gi-controls:has(#gi-cat-detail:checked) [data-section-id='detail'],
+  .gi-controls:has(#gi-cat-fill:checked) [data-section-id='fill'],
+  .gi-controls:has(#gi-cat-gradient:checked) [data-section-id='gradient'],
+  .gi-controls:has(#gi-cat-shapes:checked) [data-section-id='shapes'],
+  .gi-controls:has(#gi-cat-colors:checked) [data-section-id='colors'],
+  .gi-controls:has(#gi-cat-harmony:checked) [data-section-id='harmony'],
+  .gi-controls:has(#gi-cat-appearance:checked) [data-section-id='appearance'],
+  .gi-controls:has(#gi-cat-presets:checked) [data-section-id='presets'],
+  .gi-controls:has(#gi-cat-share:checked) [data-section-id='share'],
+  .gi-controls:has(#gi-cat-export:checked) [data-section-id='export'] {
+    display: flex;
+    /* o painel "sobe" de leve ao trocar de categoria (em vez de só
+       aparecer estático) — dá o mesmo tipo de resposta de um bottom sheet
+       abrindo, junto do scroll-pro-topo em JS (ver index.js) que já
+       garante que o painel esteja de fato visível na tela ao trocar. */
+    animation: gi-section-enter 0.32s var(--ease-expressive);
+  }
+}
+
+/* ==========================================================================
+   cursor customizado — ver src/ui/customCursor.js. A classe
+   custom-cursor-active só entra via JS depois que o módulo confirma que
+   vai desenhar o substituto (pointer:fine) — nunca direto aqui, senão um
+   JS que falhasse deixava a pessoa sem cursor nenhum.
+   ========================================================================== */
+
+.custom-cursor-active,
+.custom-cursor-active * {
+  cursor: none !important;
+}
+
+.custom-cursor {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 10000;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease, transform 0.05s linear;
+  will-change: transform;
+}
+
+.custom-cursor.visible {
+  opacity: 1;
+}
+
+.custom-cursor-shape {
+  /* só a forma, azul sólido — sem nó/âncora nenhum. */
+  fill: var(--accent-2);
+}
+
+.custom-cursor.pressed {
+  transform-origin: 1px 1px;
 }
