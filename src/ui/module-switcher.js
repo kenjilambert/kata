@@ -4,7 +4,7 @@ function resolveLabel(mod) {
   return typeof mod.label === 'function' ? mod.label() : mod.label;
 }
 
-export function createModuleSwitcher(container, modules, tabsContainer) {
+export function createModuleSwitcher(container, modules, tabsContainer, { onActivate } = {}) {
   let current = null;
 
   const tabs = document.createElement('div');
@@ -35,6 +35,7 @@ export function createModuleSwitcher(container, modules, tabsContainer) {
     content.setAttribute('aria-labelledby', `module-tab-${mod.id}`);
     current = mod;
     mod.mount(content);
+    onActivate?.(mod.id);
   }
 
   // pílula "PillNav" (inspirado no componente React Bits do mesmo nome,

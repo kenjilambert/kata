@@ -1,4 +1,5 @@
 import { t, onLangChange } from '../../core/i18n.js';
+import { enableSmoothScroll } from '../../core/smoothScroll.js';
 import { createSlider } from '../../ui/controls/slider.js';
 import { createSelect } from '../../ui/controls/select.js';
 import { createIconSelect } from '../../ui/controls/iconSelect.js';
@@ -94,6 +95,7 @@ export const mosaicModule = {
 
     const sidebar = document.createElement('div');
     sidebar.className = 'mo-controls';
+    enableSmoothScroll(sidebar);
 
     const stage = document.createElement('div');
     stage.className = 'mo-stage';

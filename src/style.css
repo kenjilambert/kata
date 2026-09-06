@@ -1,3 +1,10 @@
+/* seleção de texto (arrastar o mouse em cima de um texto) usa o azul do
+   site em vez do azul padrão do sistema operacional/navegador. */
+::selection {
+  background: var(--accent-2);
+  color: var(--accent-text);
+}
+
 /* some texto pra tela mas continua no DOM/acessibility tree — usado pro
    <h1> da página (o site em si é só logo/ícone, sem título visível). */
 .visually-hidden {
@@ -95,6 +102,14 @@
 
 *::-webkit-scrollbar-thumb:hover {
   background-color: var(--accent-2);
+}
+
+/* tira as setinhas de cima/baixo dos cantos da barra de rolagem (Chrome
+   no Windows costuma desenhar por padrão) — só a barra em si, sem elas. */
+*::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 button,
@@ -1426,8 +1441,13 @@ body {
   overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--panel);
+  /* semitransparente + blur, igual ao painel de ajustes mobile e ao
+     dropdown de select (.control-select-panel). */
+  background: rgba(20, 18, 16, 0.9);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+  animation: gi-section-enter 0.2s var(--ease-expressive);
 }
 
 .theme-combo-row {
@@ -1534,12 +1554,19 @@ body {
   /* só embaixo arredondado — o de cima fica reto, emendado no campo
      (ver .control-select.open .control-select-trigger acima). */
   border-radius: 0 0 var(--radius-md) var(--radius-md);
-  background: var(--panel);
+  /* semitransparente + blur, igual ao painel de ajustes mobile — dá pra
+     ver um pouco do que tá atrás em vez de um painel 100% opaco. */
+  background: rgba(20, 18, 16, 0.9);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
 }
 
 .control-select.open .control-select-panel {
   display: block;
+  /* mesma entrada "sobe de leve" usada em outros painéis que abrem no
+     site (galeria, seção mobile) — nunca só aparece estático. */
+  animation: gi-section-enter 0.2s var(--ease-expressive);
 }
 
 .control-select-option {

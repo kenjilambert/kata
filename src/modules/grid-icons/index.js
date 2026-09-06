@@ -14,6 +14,7 @@ import { openDrawCanvas } from '../../ui/drawCanvas.js';
 import { extractPaletteFromBlob } from '../../core/imagePalette.js';
 import { sampleImageGrid } from '../../core/imageSampling.js';
 import { t, onLangChange } from '../../core/i18n.js';
+import { enableSmoothScroll } from '../../core/smoothScroll.js';
 import { createSlider } from '../../ui/controls/slider.js';
 import { createSelect } from '../../ui/controls/select.js';
 import { createIconSelect } from '../../ui/controls/iconSelect.js';
@@ -468,6 +469,10 @@ export const gridIconsModule = {
 
     const sidebar = document.createElement('div');
     sidebar.className = 'gi-controls';
+    // roda do mouse com inércia suave em vez do scroll seco padrão do
+    // navegador (buildSidebar() só troca o innerHTML depois, o listener
+    // da roda fica de pé o tempo todo, não precisa reanexar).
+    enableSmoothScroll(sidebar);
 
     const stage = document.createElement('div');
     stage.className = 'gi-stage';
