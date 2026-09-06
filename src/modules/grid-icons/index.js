@@ -20,7 +20,8 @@ import { createIconSelect } from '../../ui/controls/iconSelect.js';
 import { createColorSwatches } from '../../ui/controls/colorSwatches.js';
 import { createShapeToggleGrid } from '../../ui/controls/shapeToggleGrid.js';
 import { createToggleSwitch } from '../../ui/controls/toggleSwitch.js';
-import { createButton } from '../../ui/controls/button.js';
+import { createButton, setButtonLabel } from '../../ui/controls/button.js';
+import { createPressButton } from '../../ui/controls/pressButton.js';
 import { createSection } from '../../ui/controls/section.js';
 import { createFrameTilePicker } from '../../ui/controls/frameTilePicker.js';
 import { CATEGORY_ICONS } from '../../ui/categoryIcons.js';
@@ -463,19 +464,19 @@ export const gridIconsModule = {
     preview.className = 'gi-preview';
     previewWrap.appendChild(preview);
 
-    // agora mora ao lado da trilha de abas Resultado/Variações/Histórico
-    // (não mais numa faixa própria acima do preview) — legenda inteira
-    // (com a explicação do gesto de arraste) não cabe mais ali em nenhum
-    // tamanho de tela, então é sempre "Editar" curto; a explicação completa
-    // continua acessível via aria-label (leitor de tela) e title (tooltip
-    // ao passar o mouse, no desktop).
-    const gridEditToggleRow = createToggleSwitch({
+    // botão de pressionar (não switch, não pílula) — precisa ser
+    // visivelmente diferente das abas Resultado/Variações/Histórico (que
+    // ficam do lado dele agora, na mesma linha) pra não confundir os dois
+    // tipos de controle. "Editar" sempre curto (a explicação completa do
+    // gesto de arraste continua acessível via aria-label/title).
+    const gridEditToggleRow = createPressButton({
       label: t('fineControlLabelShort'),
       value: state.gridEditEnabled,
       onChange: setGridEditEnabled,
     });
     gridEditToggleRow.el.classList.add('gi-grid-edit-toggle');
     gridEditToggleRow.el.title = t('fineControlLabel');
+    gridEditToggleRow.el.setAttribute('aria-label', t('fineControlLabel'));
 
     function createCollapsibleGallerySection(labelKey, row) {
       const header = document.createElement('div');
@@ -553,9 +554,18 @@ export const gridIconsModule = {
       randomizeAll();
     }
 
-    const regenerateButton = createButton({ label: t('regenerateButton'), variant: 'primary', onClick: handleRegenerate });
-    const variationsButton = createButton({ label: t('variationsButton'), onClick: handleShowVariations });
-    const luckyButton = createButton({ label: t('luckyButton'), onClick: handleLucky });
+    const regenerateButton = createButton({
+      label: t('regenerateButton'),
+      variant: 'primary',
+      icon: TOOLBAR_ICONS.heart,
+      onClick: handleRegenerate,
+    });
+    const variationsButton = createButton({
+      label: t('variationsButton'),
+      icon: TOOLBAR_ICONS.stacked,
+      onClick: handleShowVariations,
+    });
+    const luckyButton = createButton({ label: t('luckyButton'), icon: TOOLBAR_ICONS.lucky, onClick: handleLucky });
 
     stageToolbar.appendChild(regenerateButton.el);
     stageToolbar.appendChild(variationsButton.el);
@@ -641,31 +651,34 @@ export const gridIconsModule = {
       historyTabLabel
     );
 
-    // trilha de abas + toggle "Editar" numa linha só — no mobile isso evita
-    // 2 faixas separadas empilhadas (aba embaixo, editar mais embaixo ainda)
-    // comendo altura antes mesmo do preview aparecer; no desktop o toggle
-    // continua junto da trilha vertical, ao lado do preview.
+    // trilha de abas + botão "Editar" numa linha só — Editar sempre à
+    // ESQUERDA de tudo (não à direita), então vem primeiro no DOM.
     const stageTabsRow = document.createElement('div');
     stageTabsRow.className = 'gi-stage-tabs-row';
-    stageTabsRow.appendChild(stageTabs);
     stageTabsRow.appendChild(gridEditToggleRow.el);
+    stageTabsRow.appendChild(stageTabs);
 
     // "Resultado" (preview + botões) agrupado num wrapper próprio — junto
     // com .gi-gallery, são os 2 "conteúdos" possíveis da área principal; a
     // aba decide qual dos dois aparece.
-    // trilha de ícones (mobile) + preview lado a lado — no desktop
-    // .gi-stage-toolbar-rail fica display:none (a pílula com texto embaixo
-    // do preview continua sendo o que aparece lá, sem mudança nenhuma).
     const previewRow = document.createElement('div');
     previewRow.className = 'gi-preview-row';
-    previewRow.appendChild(toolbarRail);
     previewRow.appendChild(previewWrap);
 
     const resultBlock = document.createElement('div');
     resultBlock.className = 'gi-result-block';
     resultBlock.appendChild(resultTitle);
+    // pílula "Novo azulejo/Criar variações/Estou com sorte" ABAIXO do
+    // preview (Editar/Resultado/Variações/Histórico ficam ACIMA, ver
+    // stageTabsRow — faz mais sentido a navegação entre resultado/
+    // variações/histórico vir primeiro, as ações de gerar vêm depois,
+    // junto do que elas afetam). No mobile a pílula vira a trilha de
+    // ícones (toolbarRail), também embaixo do preview (não mais ao lado,
+    // tomando espaço horizontal da própria arte) — por isso appendada
+    // logo depois de stageToolbar, os dois nunca aparecem juntos.
     resultBlock.appendChild(previewRow);
     resultBlock.appendChild(stageToolbar);
+    resultBlock.appendChild(toolbarRail);
 
     const stageContent = document.createElement('div');
     stageContent.className = 'gi-stage-content';
@@ -1169,30 +1182,32 @@ export const gridIconsModule = {
     // layout) e limita pela altura que ainda cabe até o fim da viewport,
     // encolhendo a largura junto (mantendo a proporção) quando precisa.
     function computePreviewBoxSize(ratio) {
-      // no desktop a trilha de abas (Resultado/Variações/Histórico) fica ao
-      // LADO do preview, na mesma linha (.gi-stage em row) — sem reservar a
-      // largura dela aqui, o preview tomava a largura toda do stage pra si
-      // e a trilha ficava espremida/cortada pra fora da tela (.gi-stage tem
-      // overflow:hidden). No mobile ela fica numa linha própria em cima
-      // (.gi-stage em column), não disputa largura com o preview.
-      const stageIsRow = getComputedStyle(stage).flexDirection === 'row';
-      const stageGap = parseFloat(getComputedStyle(stage).gap) || 0;
-      const tabsReserved = stageIsRow ? stageTabsRow.getBoundingClientRect().width + stageGap : 0;
-      // no mobile a trilha de ícones (Novo azulejo/Criar variações/Estou
-      // com sorte) fica ao LADO do preview, não embaixo — mesmo motivo da
-      // trilha de abas acima: sem reservar a largura dela, o preview
-      // tomava o espaço todo e a trilha ficava espremida.
-      const railReserved = !stageIsRow ? toolbarRail.getBoundingClientRect().width + 10 : 0;
-      const maxW = Math.max(160, Math.min(540, (stage.clientWidth || 540) - tabsReserved - railReserved));
+      // .gi-stage agora tem moldura própria (padding:24px dos 4 lados,
+      // igual ao Mosaico) — clientWidth INCLUI esse padding, então o
+      // espaço de verdade disponível pros filhos é clientWidth menos ele
+      // (senão o preview calculado ficava largo demais e vazava pra fora
+      // da moldura).
+      const stageStyle = getComputedStyle(stage);
+      const stagePadX = parseFloat(stageStyle.paddingLeft) + parseFloat(stageStyle.paddingRight);
+      const stagePadBottom = parseFloat(stageStyle.paddingBottom) || 0;
+      // a trilha de ícones (Novo azulejo/Criar variações/Estou com sorte)
+      // não disputa mais LARGURA com o preview em tamanho nenhum de tela —
+      // no mobile ela ficava ao lado (tomando espaço da própria arte),
+      // agora fica embaixo (ver appendChild em index.js); no desktop os
+      // mesmos 3 botões (pílula com texto) viraram uma linha própria ACIMA.
+      const maxW = Math.max(160, Math.min(540, (stage.clientWidth || 540) - stagePadX));
 
       const top = previewWrap.getBoundingClientRect().top || 0;
-      // margem generosa (não só a altura atual da toolbar): o texto dos
-      // botões pode crescer depois desse cálculo — troca de idioma, ou a
-      // fonte (Space Grotesk) terminando de carregar depois do primeiro
-      // render — e sem folga sobrava só o suficiente pro tamanho de ANTES,
-      // cortando os botões debaixo do preview quando a toolbar cresce.
-      const belowReserved = stageToolbar.offsetHeight + 80;
-      // no mobile (.gi-stage em coluna) o preview e a sidebar de ajustes
+      // abaixo do preview fica a pílula de ação — no desktop a pílula com
+      // texto (.gi-stage-toolbar), no mobile a trilha de ícones
+      // (toolbarRail) — margem generosa (não só a altura atual): o
+      // conteúdo pode crescer depois desse cálculo (troca de idioma,
+      // fonte terminando de carregar), e sem folga sobrava só o
+      // suficiente pro tamanho de ANTES, cortando o que vem embaixo do
+      // preview quando aquilo cresce.
+      const belowReserved =
+        (isMobileViewport ? toolbarRail.offsetHeight + 20 : stageToolbar.offsetHeight + 80) + stagePadBottom;
+      // no mobile (.gi-layout em coluna) o preview e a sidebar de ajustes
       // disputam a MESMA altura de tela — sem reservar um mínimo pra
       // sidebar aqui, um preview quadrado grande podia tomar quase a tela
       // inteira num celular com pouca altura (ou navegador "baixo"), e o
@@ -1201,9 +1216,8 @@ export const gridIconsModule = {
       // não ajuda se o CONTAINER dele já não tem altura nenhuma: o menu
       // ficava parcialmente (ou totalmente) fora da tela, sem como rolar
       // até ele (body é overflow:hidden). No desktop a sidebar é uma
-      // coluna ao LADO do preview (não compete por altura), por isso só
-      // reserva isso quando .gi-stage está em coluna.
-      const controlsMinHeight = stageIsRow ? 0 : 310;
+      // coluna ao LADO do stage inteiro (não compete por altura).
+      const controlsMinHeight = isMobileViewport ? 310 : 0;
       const maxH = Math.max(160, window.innerHeight - top - belowReserved - controlsMinHeight);
       let w = maxW;
       let h = w / ratio;
@@ -2663,9 +2677,9 @@ export const gridIconsModule = {
       // sem precisar salvar nada — bom pra mandar uma composição específica
       // pra alguém sem precisar exportar arquivo) ---
       function flashButtonText(button, text, revertTo) {
-        button.el.textContent = text;
+        setButtonLabel(button.el, text);
         setTimeout(() => {
-          button.el.textContent = revertTo;
+          setButtonLabel(button.el, revertTo);
         }, 1500);
       }
 
@@ -2742,9 +2756,9 @@ export const gridIconsModule = {
             // não dava sinal nenhum pra quem clicou — parecia que o botão
             // simplesmente não fazia nada.
             const original = t('exportPngButton');
-            exportPngButton.el.textContent = t('copyCodeButtonError');
+            setButtonLabel(exportPngButton.el, t('copyCodeButtonError'));
             setTimeout(() => {
-              exportPngButton.el.textContent = original;
+              setButtonLabel(exportPngButton.el, original);
             }, 2000);
           }
         },
@@ -2924,12 +2938,11 @@ export const gridIconsModule = {
       variationsTabLabel.textContent = t('variationsLabel');
       historyLabel.textContent = t('historyLabel');
       historyTabLabel.textContent = t('historyLabel');
-      regenerateButton.el.textContent = t('regenerateButton');
-      variationsButton.el.textContent = t('variationsButton');
-      luckyButton.el.textContent = t('luckyButton');
-      const gridEditLabel = gridEditToggleRow.el.querySelector('.control-label');
-      if (gridEditLabel) gridEditLabel.textContent = t('fineControlLabelShort');
-      gridEditToggleRow.el.querySelector('.toggle-switch')?.setAttribute('aria-label', t('fineControlLabelShort'));
+      setButtonLabel(regenerateButton.el, t('regenerateButton'));
+      setButtonLabel(variationsButton.el, t('variationsButton'));
+      setButtonLabel(luckyButton.el, t('luckyButton'));
+      gridEditToggleRow.el.textContent = t('fineControlLabelShort');
+      gridEditToggleRow.el.setAttribute('aria-label', t('fineControlLabel'));
       gridEditToggleRow.el.title = t('fineControlLabel');
       buildSidebar();
     });

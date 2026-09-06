@@ -1,3 +1,17 @@
+/* some texto pra tela mas continua no DOM/acessibility tree — usado pro
+   <h1> da página (o site em si é só logo/ícone, sem título visível). */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 :root {
   /* paleta espelhada no kenjilambert.com: preto quase puro, creme como
      "texto principal" (não branco puro) e os dois acentos que se revezam
@@ -27,6 +41,13 @@
      preview/geração do padrão em si. */
   --ease-expressive: cubic-bezier(0.34, 1.56, 0.64, 1);
   font-family: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* troca de fonte (fallback -> Space Grotesk carregada) sem re-layout —
+     ajusta o tamanho do fallback pra casar a métrica, evita CLS. */
+  font-size-adjust: from-font;
+  /* site é dark-only, não adapta a light mode — isso avisa o browser pra
+     colorir scrollbar/inputs nativos combinando, em vez de usar o padrão
+     claro do SO. */
+  color-scheme: dark;
 }
 
 /* entrada de painel/galeria ao trocar de aba (categoria de ajuste, ou
@@ -362,20 +383,25 @@ body {
 }
 
 .gi-stage {
-  /* solto — sem moldura (nem cor de fundo própria): o preview é o
-     protagonista, não uma "caixa de resultado" ao lado da caixa de
-     controles. A altura já bate com a sidebar sozinha (align-items:stretch
-     no .gi-layout, ver abaixo), então tirar a moldura não desalinha nada.
-     Linha (conteúdo + trilha de abas Resultado/Variações/Histórico) no
-     desktop — no mobile vira coluna (aba em cima), ver media query. */
+  /* moldura igual à do Mosaico (.mo-stage) — mesmo painel/borda/raio, pros
+     dois módulos ficarem visualmente consistentes (antes o Azulejo ficava
+     "solto", sem caixa nenhuma em volta do preview+botões).
+     Coluna sempre (conteúdo, depois a trilha Resultado/Variações/
+     Histórico + Editar embaixo) — era linha (trilha ao LADO do preview)
+     só no desktop, mas essa trilha lateral competia por largura e sobrava
+     espaço vazio embaixo em janelas mais estreitas; embaixo ela vira uma
+     barra horizontal cheia, igual já era no mobile. */
   flex: 1;
   min-width: 0;
   min-height: 0;
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   align-items: stretch;
   gap: 16px;
-  padding: 24px 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 24px;
   overflow: hidden;
 }
 
@@ -384,8 +410,18 @@ body {
      tela; só a galeria (Variações/Histórico, ver .gi-gallery) tem scroll
      próprio, porque aquilo sim é uma lista que pode crescer. Só um dos 2
      filhos (.gi-result-block ou .gi-gallery) fica visível por vez — ver
-     regras :has() mais abaixo. */
-  flex: 1;
+     regras :has() mais abaixo.
+     flex:1 esticava isso pra preencher a altura toda do .gi-stage (que por
+     sua vez estica pra bater com a sidebar, bem mais alta quando tem muita
+     seção aberta) — sobrava um vão gigante DEPOIS do preview e ANTES da
+     trilha Resultado/Variações/Histórico (que é irmã daqui, vem logo
+     abaixo), porque essa trilha só se move junto com o fim REAL do
+     conteúdo, não com a altura esticada. Sem flex:1, o bloco fica do
+     tamanho do próprio conteúdo — a trilha cola direto embaixo do preview,
+     acompanhando o redimensionamento dele; qualquer sobra de altura (de
+     uma sidebar mais alta) fica como espaço vazio no fim do .gi-stage
+     inteiro, não espremida entre o preview e o menu. */
+  flex: 0 0 auto;
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -453,34 +489,45 @@ body {
   color: var(--accent-text);
 }
 
-/* trilha de abas Resultado/Variações/Histórico + toggle "Editar" juntos
-   numa linha só — vertical à direita do preview no desktop (order:1 =
-   depois do conteúdo, numa coluna), horizontal em cima no mobile (ver
-   media query: order:-1 + flex-direction:row). Só um dos 2 blocos da
-   .gi-stage-content aparece por vez, escolhido por qual aba está marcada —
-   ver as regras :has() logo abaixo, que usam o id de cada input direto
-   (funcionam não importa onde a trilha esteja no DOM/CSS). */
+/* trilha Editar + abas Resultado/Variações/Histórico juntos numa linha só,
+   ACIMA do preview (a pílula de ação — Novo azulejo/Criar variações/
+   Estou com sorte — fica abaixo dele, ver .gi-stage-toolbar). Editar
+   sempre o primeiro (mais à esquerda), ver ordem de appendChild em
+   index.js. Só um dos 2 blocos da .gi-stage-content aparece por vez,
+   escolhido por qual aba está marcada — ver as regras :has() logo abaixo,
+   que usam o id de cada input direto (funcionam não importa onde a
+   trilha esteja no DOM/CSS). */
 .gi-stage-tabs-row {
-  order: 1;
+  /* width:100% (do .gi-stage-content inteiro) esticava mais que o
+     próprio preview — encostava nas bordas da moldura em vez de
+     acompanhar a largura real do preview logo abaixo, como a pílula de
+     botões (.gi-stage-toolbar) já faz. */
   flex-shrink: 0;
   display: flex;
-  flex-direction: column;
-  gap: 14px;
+  flex-direction: row;
   align-items: center;
-  /* era align-self:center — centralizava em relação à ALTURA INTEIRA do
-     stage, não em relação ao preview; numa janela alta (preview
-     relativamente curto perto da altura toda disponível) a trilha
-     "flutuava" solta no meio da tela, longe do canto do preview.
-     flex-start ancora ela sempre no topo, alinhada com o topo do preview
-     (que também começa lá em cima dentro de .gi-stage-content). */
-  align-self: flex-start;
+  gap: 8px;
+  width: 100%;
+  max-width: var(--gi-preview-w, 540px);
+  /* .gi-stage é align-items:stretch (pro .gi-stage-content esticar cheio
+     e centralizar o preview por dentro) — mas essa trilha é IRMÃ dele,
+     fora desse contexto, e como tem largura própria definida (max-width
+     acima), o stretch não centraliza sozinho: sem isso ela colava na
+     ESQUERDA (fallback de align-items:stretch pra um item com tamanho
+     definido é flex-start, não center). */
+  align-self: center;
 }
 
 .gi-stage-tabs {
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  flex-direction: row;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg);
 }
 
 .gi-stage-tabs-input {
@@ -502,26 +549,30 @@ body {
 }
 
 .gi-stage-tabs-label {
-  flex-shrink: 0;
+  /* sem borda própria — o container (.gi-stage-tabs) já é a pílula com
+     fundo/borda; o rótulo é só o "miolo" que troca de cor quando marcado.
+     Mesmo clamp de fonte que .gi-stage-toolbar .control-button (a pílula
+     de ação logo abaixo) — as duas trilhas de pílula precisam crescer
+     junto, do mesmo jeito, senão uma fica visivelmente maior que a outra
+     dependendo da largura da tela. */
+  flex: 1;
   text-align: center;
   white-space: nowrap;
-  padding: 8px 14px;
-  border: 1px solid var(--border);
+  padding: 8px 6px;
   border-radius: var(--radius-pill);
-  font-size: 11px;
+  font-size: clamp(10px, 1.1vw, 12px);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--text-muted);
   cursor: pointer;
   transform: scale(1);
-  transition: background-color 0.25s var(--ease-expressive), border-color 0.25s var(--ease-expressive),
-    color 0.2s ease, transform 0.25s var(--ease-expressive);
+  transition: background-color 0.25s var(--ease-expressive), color 0.2s ease,
+    transform 0.25s var(--ease-expressive);
 }
 
 .gi-stage-tabs-input:checked + .gi-stage-tabs-label {
   background: var(--accent);
-  border-color: var(--accent);
   color: var(--accent-text);
   /* mesma "molinha" do indicador das categorias — a pílula ativa dá uma
      leve estufada em vez de só trocar de cor. */
@@ -581,11 +632,32 @@ body {
 
 .gi-stage-toolbar .control-button {
   flex: 1;
-  /* idem — fonte/respiro proporcionais à largura da tela (não um valor
-     fixo), pra nunca ficar "grande demais sem motivo" numa janela mais
-     estreita onde o preview/pílula já encolheram. */
-  font-size: clamp(11px, 1.3vw, 14px);
-  padding: clamp(7px, 0.9vw, 10px) clamp(9px, 1.2vw, 14px);
+  /* MESMO clamp de fonte que .gi-stage-tabs-label (a trilha Resultado/
+     Variações/Histórico logo em cima) — tinha um clamp bem maior aqui
+     antes (11-14px contra 11px fixo lá), então essa pílula sempre
+     aparecia visivelmente maior que a de cima em qualquer largura de
+     tela; agora as duas crescem junto, do mesmo jeito. */
+  font-size: clamp(10px, 1.1vw, 12px);
+  padding: 8px 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  /* pílula cheia (raio total), igual a trilha de cima — o variant
+     "default" (Criar variações/Estou com sorte) usava --radius-md
+     (cantos só arredondados) por padrão, ficando com formato diferente
+     do "Novo azulejo" (variant primary, que já ganha --radius-pill). */
+  border-radius: var(--radius-pill);
+}
+
+/* botão "Novo azulejo" (regenerar) — o único da trilha que fica AZUL (não
+   vermelho como os outros botões "primary" do site, ex.: Exportar SVG/PNG)
+   pra se destacar como a ação principal desse trio específico, sem herdar
+   a cor de destaque padrão usada em todo canto. Mesma troca no ícone do
+   mobile (.gi-toolbar-rail-button-primary), que é a mesma ação. */
+.gi-stage-toolbar .control-button-primary,
+.gi-toolbar-rail-button-primary {
+  background: var(--accent-2);
+  border-color: var(--accent-2);
 }
 
 .gi-preview-wrap {
@@ -624,22 +696,40 @@ body {
   margin: 0 auto;
 }
 
-.gi-grid-edit-toggle.control {
-  /* agora mora ao lado da trilha de abas (.gi-stage-tabs-row), não numa
-     faixa própria de largura inteira acima do preview — compacto, rótulo
-     e switch lado a lado. */
+/* botão "Editar" — física de botão de verdade, não switch nem pílula (as
+   abas Resultado/Variações/Histórico do lado já são pílulas): desligado
+   parece levantado (sombra por baixo dá volume), ligado "afunda" (sombra
+   some, desloca 1px pra baixo) — o oposto de simplesmente trocar de cor. */
+.press-button {
   flex-shrink: 0;
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-}
-
-.gi-grid-edit-toggle .control-label {
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--panel);
+  color: var(--text-muted);
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 2px 0 0 var(--border);
+  transform: translateY(0);
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease,
+    box-shadow 0.1s ease, transform 0.1s ease;
+}
+
+.press-button:hover {
+  border-color: var(--accent-2);
+  color: var(--accent-2);
+}
+
+.press-button.pressed {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  box-shadow: none;
+  transform: translateY(2px);
 }
 
 .gi-grid-editor {
@@ -954,10 +1044,12 @@ body {
 }
 
 .control-section-randomize {
-  /* ícone solto, sem caixinha com borda — menos "formulário", mais leve. */
+  /* ícone solto, sem caixinha com borda — menos "formulário", mais leve.
+     min-width/height (não width/height) pra alvo de toque ficar >=24px
+     (WCAG 2.5.8) sem crescer o ícone visual em si. */
   flex-shrink: 0;
-  width: 22px;
-  height: 22px;
+  min-width: 24px;
+  min-height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1310,7 +1402,7 @@ body {
 .swatch-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
   align-items: center;
 }
 
@@ -1355,12 +1447,15 @@ body {
 }
 
 .swatch-remove {
+  /* badge de canto — visual continua discreto, mas a área clicável real
+     cresce pra perto do mínimo de 24px (WCAG 2.5.8) via ::before,
+     sem empurrar os chips vizinhos (que são apertados, com gap curto). */
   position: absolute;
-  top: -6px;
-  right: -6px;
-  width: 16px;
-  height: 16px;
-  line-height: 14px;
+  top: -7px;
+  right: -7px;
+  width: 18px;
+  height: 18px;
+  line-height: 16px;
   padding: 0;
   border: 1px solid var(--border);
   border-radius: 50%;
@@ -1368,6 +1463,12 @@ body {
   color: var(--text-muted);
   font-size: 11px;
   cursor: pointer;
+}
+
+.swatch-remove::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
 }
 
 .swatch-remove:hover {
@@ -1528,6 +1629,15 @@ body {
   cursor: grabbing;
 }
 
+.gradient-stop-handle::before {
+  /* área de toque perto do mínimo de 24px (WCAG 2.5.8) sem alargar o
+     losango visual — que precisa ficar fino pra arrastar com precisão
+     ao longo da barra de gradiente. */
+  content: "";
+  position: absolute;
+  inset: -3px;
+}
+
 .gradient-stop-handle.selected {
   border: 2px solid var(--accent);
   z-index: 1;
@@ -1570,6 +1680,24 @@ body {
   cursor: pointer;
   transform: scale(1);
   transition: border-color 0.15s ease, transform 0.15s var(--ease-expressive);
+  /* label sempre numa span própria agora (ícone opcional antes dela, ver
+     createButton em ui/controls/button.js) — flex centraliza os dois
+     juntos mesmo nos botões sem ícone nenhum (a span sozinha no meio). */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.control-button-icon {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.control-button-icon svg {
+  width: 16px;
+  height: 16px;
+  display: block;
 }
 
 .control-button:hover {
@@ -2017,7 +2145,11 @@ body {
        e controlsMinHeight em computePreviewBoxSize, grid-icons/index.js). */
     flex: 0 0 auto;
     overflow: visible;
-    padding: 12px 0;
+    /* era "12px 0" (sem padding lateral nenhum) — sobrou de quando essa
+       moldura não existia ainda; com o painel/borda de verdade (ver regra
+       base .gi-stage acima), isso encostava a trilha de abas e o preview
+       direto na borda da moldura, sem respiro nenhum nas laterais. */
+    padding: 16px;
   }
 
   /* no desktop .gi-stage é uma linha (conteúdo + trilha de abas lado a
@@ -2027,26 +2159,29 @@ body {
     flex-direction: column;
   }
 
-  /* botões abaixo do preview: menores que no desktop — o preview é o
-     protagonista da tela, os botões são coadjuvante. */
-  .gi-stage-toolbar .control-button,
+  /* botões abaixo do preview (Mosaico, que não tem trilha de ícones — o
+     Azulejo já esconde .gi-stage-toolbar aqui embaixo, ver regra
+     seguinte, então essa regra não afeta ele): menores que no desktop, o
+     preview é o protagonista da tela. */
   .mo-stage-toolbar .control-button {
     padding: 8px 10px;
     font-size: 12px;
   }
 
   /* trio "Novo azulejo / Criar variações / Estou com sorte" — no mobile
-     vira ícones numa trilha ao LADO do preview (menos altura ocupada,
-     mais espaço pro painel de ajustes logo abaixo); a pílula com texto
-     (só existe pro desktop) some daqui. */
+     vira ícones numa trilha ABAIXO do preview (era ao lado — tomava
+     espaço horizontal da própria arte, deixando o preview menor à toa); a
+     pílula com texto (só existe pro desktop) some daqui. */
   .gi-stage-toolbar {
     display: none;
   }
 
   .gi-stage-toolbar-rail {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    justify-content: center;
     gap: 8px;
+    width: 100%;
   }
 
   .gi-controls {
@@ -2075,38 +2210,13 @@ body {
     min-height: min(260px, 40vh);
   }
 
-  /* trilha de abas Resultado/Variações/Histórico + toggle Editar — no
-     desktop é uma coluna vertical à direita do preview (ver regra base
-     .gi-stage-tabs-row); no mobile vira uma linha só horizontal em cima do
-     conteúdo: abas (pílulas, ocupando o espaço que sobra) + o switch
-     Editar encostado do lado, sem faixas separadas empilhadas comendo
-     altura antes do preview aparecer. */
+  /* trilha de abas Resultado/Variações/Histórico + botão Editar — a regra
+     base já deixa isso uma linha horizontal cheia (mesmo visual dos dois
+     tamanhos de tela agora); só a POSIÇÃO muda: no desktop fica embaixo do
+     preview (order:1, ver regra base), no mobile continua em cima de tudo,
+     antes do preview aparecer. */
   .gi-stage-tabs-row {
-    order: -1;
-    flex-direction: row;
-    align-items: center;
-    gap: 8px;
     margin-bottom: 12px;
-  }
-
-  .gi-stage-tabs {
-    flex: 1;
-    min-width: 0;
-    flex-direction: row;
-    gap: 4px;
-    padding: 3px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-pill);
-    background: var(--bg);
-  }
-
-  .gi-stage-tabs-label {
-    flex: 1;
-    padding: 8px 6px;
-  }
-
-  .gi-grid-edit-toggle.control {
-    flex-shrink: 0;
   }
 
   .theme-combo-panel,
@@ -2145,6 +2255,23 @@ body {
        do conteúdo que rola por trás dela, não é só mais uma linha na
        lista (mesma linguagem de elevação do Material). */
     box-shadow: 0 -8px 16px rgba(0, 0, 0, 0.35);
+    /* sem barra de rolagem visível — o esmaecido nas pontas (mask-image
+       abaixo) já avisa que tem mais ícone pra rolar, sem precisar de uma
+       barrinha cinza embaixo (que também brigava com a sombra acima). */
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent,
+      black 16px,
+      black calc(100% - 16px),
+      transparent
+    );
+    mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent);
+  }
+
+  .gi-mobile-category-tabs::-webkit-scrollbar {
+    display: none;
   }
 
   .gi-mobile-category-tabs-input {
@@ -2320,4 +2447,26 @@ body {
 
 .custom-cursor.pressed {
   transform-origin: 1px 1px;
+}
+
+/* prefers-reduced-motion: em vez de um "* { transition: none !important }"
+   grosso (que também quebraria feedback útil de hover/foco), mira só nos
+   dois efeitos que de fato têm "movimento" perceptível: a curva com mola
+   (--ease-expressive vira uma curva neutra, sem overshoot) e a entrada de
+   seção deslizando (gi-section-enter, que troca de translateY(8px) pra
+   estático). Transições curtas de cor/opacidade continuam — não são o
+   tipo de motion que causa desconforto. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --ease-expressive: ease;
+  }
+
+  .gi-gallery,
+  [data-section-id] {
+    animation: none;
+  }
+
+  .custom-cursor {
+    transition: opacity 0.15s ease;
+  }
 }

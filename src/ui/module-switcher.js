@@ -9,8 +9,14 @@ export function createModuleSwitcher(container, modules, tabsContainer) {
 
   const tabs = document.createElement('div');
   tabs.className = 'module-tabs';
+  // semântica de tabs (ARIA Tabs pattern) — antes eram <button> soltos com
+  // só uma classe .active visual, sem nada pra leitor de tela entender que
+  // é um seletor de view.
+  tabs.setAttribute('role', 'tablist');
   const content = document.createElement('div');
   content.className = 'module-content';
+  content.setAttribute('role', 'tabpanel');
+  content.id = 'module-content-panel';
   // as abas moraram dentro do próprio #app antes — agora vivem no header,
   // do lado do logo (ver index.html/main.js), então quem chama decide onde
   // elas entram. Sem tabsContainer, cai de volta pro jeito antigo.
@@ -20,9 +26,13 @@ export function createModuleSwitcher(container, modules, tabsContainer) {
   function activate(mod) {
     if (current?.unmount) current.unmount();
     content.innerHTML = '';
-    tabs.querySelectorAll('button').forEach((b) => {
-      b.classList.toggle('active', b.dataset.id === mod.id);
+    tabs.querySelectorAll('[role="tab"]').forEach((b) => {
+      const isActive = b.dataset.id === mod.id;
+      b.classList.toggle('active', isActive);
+      b.setAttribute('aria-selected', String(isActive));
+      b.tabIndex = isActive ? 0 : -1;
     });
+    content.setAttribute('aria-labelledby', `module-tab-${mod.id}`);
     current = mod;
     mod.mount(content);
   }
@@ -50,6 +60,11 @@ export function createModuleSwitcher(container, modules, tabsContainer) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.dataset.id = mod.id;
+    btn.id = `module-tab-${mod.id}`;
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-selected', 'false');
+    btn.setAttribute('aria-controls', content.id);
+    btn.tabIndex = -1;
     const { circle, label } = createPillLabel(resolveLabel(mod));
     btn.appendChild(circle);
     btn.appendChild(label);
@@ -58,10 +73,27 @@ export function createModuleSwitcher(container, modules, tabsContainer) {
     return { mod, btn, label };
   });
 
+  // ARIA Tabs pattern: setinhas esquerda/direita movem o foco entre as
+  // abas habilitadas (roving tabindex — só a aba ativa fica no fluxo do
+  // Tab normal do teclado).
+  tabs.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const enabled = buttons.map((b) => b.btn);
+    const from = enabled.indexOf(document.activeElement);
+    if (from === -1) return;
+    e.preventDefault();
+    const dir = e.key === 'ArrowRight' ? 1 : -1;
+    const next = enabled[(from + dir + enabled.length) % enabled.length];
+    next.focus();
+    next.click();
+  });
+
   const comingSoonTab = document.createElement('button');
   comingSoonTab.type = 'button';
   comingSoonTab.className = 'module-tab-disabled';
   comingSoonTab.disabled = true;
+  comingSoonTab.setAttribute('role', 'tab');
+  comingSoonTab.setAttribute('aria-disabled', 'true');
   comingSoonTab.textContent = t('comingSoonTab');
   tabs.appendChild(comingSoonTab);
 
