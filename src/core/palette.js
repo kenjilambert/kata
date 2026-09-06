@@ -11,11 +11,18 @@ export const PRESETS = {
   kata: {
     label: 'Kata',
     background: '#0a0a0a',
+    // era 4 cores (a 4ª, #141414, quase preta — tão perto do fundo #0a0a0a
+    // que uma forma sorteada com essa cor ficava quase invisível, só uma
+    // "mancha" um pouco mais clara que o fundo, do formato QUADRADO da
+    // célula em vez do formato da própria forma — a diagonal de um losango/
+    // triângulo não cobre a célula inteira, sobrando um canto do quadrado
+    // da célula pintado nessa cor quase-preta por trás, bem visível contra
+    // o fundo mesmo sendo um preto "quase igual"). Removida — só as 3 cores
+    // de marca de verdade (vermelho/creme/azul).
     colors: [
       { color: '#ea4530', weight: 3 },
       { color: '#f1eec0', weight: 3 },
       { color: '#3aa1d8', weight: 2 },
-      { color: '#141414', weight: 1 },
     ],
   },
   tropical: {
