@@ -43,6 +43,14 @@ export function createModuleSwitcher(container, modules, tabsContainer, { onActi
       b.tabIndex = isActive ? 0 : -1;
     });
     content.setAttribute('aria-labelledby', `module-tab-${mod.id}`);
+    // no mobile a fileira de abas rola na horizontal (ver .module-tabs no
+    // media query de style.css) — sem isso, abrir o site numa aba que está
+    // fora da parte visível da fileira não mostrava qual está selecionada.
+    if (tabs.scrollWidth > tabs.clientWidth) {
+      tabs
+        .querySelector('[role="tab"].active')
+        ?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+    }
   }
 
   async function activate(mod) {

@@ -17,6 +17,16 @@ import { createGradientTilesEngine } from './engine.js';
 // cada troca de idioma.
 function frameOptions() {
   return [
+    // "Tela cheia" não tem proporção fixa: ela é MEDIDA do espaço que sobra
+    // na tela (ver computeFullBox) e reage a redimensionar a janela/girar o
+    // celular. O ratio aqui serve só pro desenho do iconezinho do seletor —
+    // usa a proporção da própria janela pra prévia parecer com o resultado.
+    {
+      value: 'full',
+      ratio: Math.max(0.4, Math.min(2.5, window.innerWidth / Math.max(1, window.innerHeight))),
+      label: t('gradientFrameFull'),
+      caption: 'FULL',
+    },
     { value: 'square', ratio: EXPORT_FRAME_RATIOS.square, label: t('exportFrame_square'), caption: '1:1' },
     { value: 'portrait', ratio: EXPORT_FRAME_RATIOS.portrait, label: t('exportFrame_portrait'), caption: '4:5' },
     { value: 'story', ratio: EXPORT_FRAME_RATIOS.story, label: t('exportFrame_story'), caption: '9:16' },
@@ -32,7 +42,10 @@ function frameOptions() {
 // vermelho), parecida com o vídeo de referência que o Kenji mandou.
 const gradientState = {
   resolution: 40,
-  format: 'square',
+  // padrão é "Tela cheia": é o formato com mais impacto visual, e é o que
+  // faz a aba parecer uma peça inteira em vez de um quadradinho no meio do
+  // vazio. Os formatos fixos continuam ali pra exportar em proporção certa.
+  format: 'full',
   ratio: EXPORT_FRAME_RATIOS.square,
   shapeScale: 1,
   scale: 1,
@@ -48,6 +61,7 @@ const gradientState = {
 };
 
 let cleanupLang = null;
+let cleanupResize = null;
 let engine = null;
 let recordTimerId = null;
 let gifTimerId = null;
@@ -99,16 +113,60 @@ export const gradientTilesModule = {
 
     engine = createGradientTilesEngine(canvas);
 
+    // espaço que sobra na tela pro preview no formato "Tela cheia": largura
+    // útil do stage e altura daqui (topo do preview) até onde os controles
+    // começam. No mobile a sidebar é um "bottom sheet" fixo POR CIMA do
+    // conteúdo (ver .vt-controls no media query), então desconta a altura
+    // dela + uma folga; no desktop ela é uma coluna ao lado e não disputa
+    // altura nenhuma. Mesma ideia do computePreviewBoxSize do Azulejo.
+    function computeFullBox() {
+      // zera as dimensões aplicadas ANTES de medir. O preview é item flex
+      // dentro do stage, então a largura dele influencia a largura do próprio
+      // stage — medir com o valor da rodada anterior ainda aplicado criava um
+      // laço de realimentação (o preview esticava pra largura da janela toda
+      // e o stage encolhia embaixo dele). Com as dimensões limpas, o preview
+      // volta pro width:100% do CSS e quem manda na largura é o layout.
+      previewWrap.style.width = '';
+      previewWrap.style.height = '';
+      void stage.offsetWidth; // força o reflow antes de ler as medidas
+      const cs = getComputedStyle(stage);
+      const padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+      const padBottom = parseFloat(cs.paddingBottom) || 0;
+      const w = Math.max(160, (stage.clientWidth || window.innerWidth) - padX);
+      const top = previewWrap.getBoundingClientRect().top;
+      const sheetH = isMobileViewport ? sidebar.getBoundingClientRect().height + 14 : 0;
+      const h = Math.max(160, window.innerHeight - top - sheetH - padBottom - 12);
+      return { w: Math.round(w), h: Math.round(h) };
+    }
+
     function applyOptions() {
+      const isFull = gradientState.format === 'full';
+      const box = isFull ? computeFullBox() : null;
       engine.setOptions({
         ...gradientState,
+        // no "Tela cheia" a proporção vem da caixa medida, não da lista fixa
+        ratio: isFull ? box.w / box.h : gradientState.ratio,
+        // e o canvas acompanha o tamanho real (limitado no motor) pra forma
+        // não sair borrada esticada por CSS num monitor grande
+        maxDim: isFull ? Math.max(box.w, box.h) * Math.min(2, window.devicePixelRatio || 1) : null,
         background: patternState.background || '#141210',
         shapesAllowed: patternState.shapesAllowed,
       });
       const { cols, rows } = engine.getGridSize();
-      previewWrap.style.aspectRatio = `${cols} / ${rows}`;
-      const maxWidthFromHeight = window.innerHeight * 0.78 * (cols / rows);
-      previewWrap.style.maxWidth = `${Math.round(maxWidthFromHeight)}px`;
+      if (isFull) {
+        // largura/altura em px explícitas: aspect-ratio não serve aqui, a
+        // ideia é justamente ocupar a caixa toda, não manter proporção.
+        previewWrap.style.aspectRatio = '';
+        previewWrap.style.maxWidth = '';
+        previewWrap.style.width = `${box.w}px`;
+        previewWrap.style.height = `${box.h}px`;
+      } else {
+        previewWrap.style.width = '';
+        previewWrap.style.height = '';
+        previewWrap.style.aspectRatio = `${cols} / ${rows}`;
+        const maxWidthFromHeight = window.innerHeight * 0.78 * (cols / rows);
+        previewWrap.style.maxWidth = `${Math.round(maxWidthFromHeight)}px`;
+      }
     }
 
     let recordButton;
@@ -417,7 +475,6 @@ export const gradientTilesModule = {
     }
 
     buildSidebar();
-    applyOptions();
 
     stage.appendChild(resultTitle);
     stage.appendChild(previewWrap);
@@ -425,7 +482,33 @@ export const gradientTilesModule = {
     root.appendChild(stage);
     container.appendChild(root);
 
+    // applyOptions() SÓ depois de inserir na página: o formato "Tela cheia"
+    // mede o espaço disponível de verdade (computeFullBox), e num elemento
+    // ainda fora do documento toda medida é 0 — o preview saía do tamanho da
+    // janela inteira, estourando o stage.
+    applyOptions();
+
     engine.start();
+
+    // "Tela cheia" precisa remedir quando a janela muda de tamanho (ou o
+    // celular gira). Passa por rAF pra não recalcular a grade dezenas de
+    // vezes durante o arraste do canto da janela; e é removido no unmount —
+    // listener de window sobrevive à troca de aba se ninguém tirar.
+    let resizeRaf = null;
+    const onResize = () => {
+      if (gradientState.format !== 'full') return;
+      if (resizeRaf != null) return;
+      resizeRaf = requestAnimationFrame(() => {
+        resizeRaf = null;
+        applyOptions();
+      });
+    };
+    window.addEventListener('resize', onResize);
+    cleanupResize = () => {
+      window.removeEventListener('resize', onResize);
+      if (resizeRaf != null) cancelAnimationFrame(resizeRaf);
+      resizeRaf = null;
+    };
 
     cleanupLang = onLangChange(() => {
       resultTitle.textContent = t('tabGradient');
@@ -445,6 +528,10 @@ export const gradientTilesModule = {
     if (engine) {
       engine.destroy();
       engine = null;
+    }
+    if (cleanupResize) {
+      cleanupResize();
+      cleanupResize = null;
     }
     if (cleanupLang) {
       cleanupLang();

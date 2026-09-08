@@ -253,6 +253,7 @@ const STRINGS = {
     videoCameraLabel: 'Câmera',
 
     tabGradient: 'Gradiente',
+    gradientFrameFull: 'Tela cheia (ocupa o espaço todo)',
     gradientScaleLabel: 'Escala das manchas',
     gradientTurbulenceLabel: 'Turbulência',
     gradientSpeedLabel: 'Velocidade',
@@ -506,6 +507,7 @@ const STRINGS = {
     videoCameraLabel: 'Camera',
 
     tabGradient: 'Gradient',
+    gradientFrameFull: 'Full screen (fills all the space)',
     gradientScaleLabel: 'Blob scale',
     gradientTurbulenceLabel: 'Turbulence',
     gradientSpeedLabel: 'Speed',

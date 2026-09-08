@@ -27,6 +27,14 @@ function computeGrid(resolution, ratio) {
   return framedGridDims(resolution, ratio);
 }
 
+// teto e piso do lado maior do canvas de saída — o "Tela cheia" pede um
+// tamanho conforme a caixa real, mas sem deixar virar um canvas gigante
+// (custo de rasterizar 9216 formas cresce com a área).
+function clampOutputDim(requested) {
+  if (!requested) return OUTPUT_MAX_DIM;
+  return Math.max(480, Math.min(1400, Math.round(requested)));
+}
+
 function computeOutputSize(cols, rows, maxDim) {
   if (cols >= rows) {
     return { width: maxDim, height: Math.max(1, Math.round((maxDim * rows) / cols)) };
@@ -186,6 +194,8 @@ export function createGradientTilesEngine(outputCanvas) {
   const options = {
     resolution: 40,
     ratio: 1,
+    // lado maior do canvas de saída; vazio = OUTPUT_MAX_DIM (ver clampOutputDim)
+    maxDim: null,
     cols: 0,
     rows: 0,
     shapeScale: 1,
@@ -231,7 +241,11 @@ export function createGradientTilesEngine(outputCanvas) {
     const { cols, rows } = computeGrid(options.resolution, options.ratio);
     options.cols = cols;
     options.rows = rows;
-    const out = computeOutputSize(cols, rows, OUTPUT_MAX_DIM);
+    // maxDim é opcional: o formato "Tela cheia" passa um valor calculado a
+    // partir do tamanho real da caixa na tela (ver computeFullBox em
+    // index.js), pra forma não sair borrada de tanto ser esticada por CSS
+    // num monitor grande. Os formatos fixos seguem no padrão.
+    const out = computeOutputSize(cols, rows, clampOutputDim(options.maxDim));
     outputCanvas.width = out.width;
     outputCanvas.height = out.height;
     const gifOut = computeOutputSize(cols, rows, GIF_MAX_DIM);

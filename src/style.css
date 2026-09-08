@@ -2564,6 +2564,22 @@ body {
        (o body é overflow:hidden, então não havia como rolar até ele). */
     min-width: 0;
     flex: 1 1 auto;
+    /* backstop: mesmo que algo lá dentro insista em ficar maior que a
+       pílula, não pode VAZAR por cima do seletor de idioma (que tem
+       position:relative + z-index e portanto pintava em cima da fileira de
+       abas — era isso que aparecia como "o PT/EN em cima do menu"). */
+    overflow: hidden;
+  }
+
+  /* o slot que HOSPEDA a fileira de abas (div sem estilo no index.html, ver
+     #module-tabs-slot / createModuleSwitcher) fica no meio do caminho entre
+     .brand e .module-tabs — e como item flex ele nasce com min-width:auto,
+     que resolve pro tamanho mín. do conteúdo (~377px, já que cada pílula é
+     flex-shrink:0). Ou seja: era ELE que travava a largura, e por isso nem o
+     flex nem o overflow-x da fileira lá dentro tinham efeito nenhum. */
+  .header-tabs-slot {
+    min-width: 0;
+    flex: 1 1 auto;
   }
 
   /* as abas de módulo ROLAM na horizontal numa tela estreita. Eram 3 abas
@@ -2575,14 +2591,24 @@ body {
     height: 34px;
     gap: 2px;
     padding: 2px;
+    /* flex EXPLÍCITO: como item flex de .brand, a fileira precisa poder
+       encolher pra que o overflow-x abaixo tenha o que rolar. Sem declarar
+       isso ela ficava do tamanho do conteúdo (377px) dentro de um .brand de
+       ~281px e simplesmente transbordava — o scroll nunca entrava em ação. */
+    flex: 1 1 auto;
     min-width: 0;
     overflow-x: auto;
-    /* barra de rolagem escondida: a fileira de pílulas é curta e o próprio
-       corte na borda já sinaliza que tem mais coisa (mesma escolha da barra
-       de categorias, ver .gi-mobile-category-tabs). */
+    overflow-y: hidden;
+    /* barra de rolagem escondida: a fileira de pílulas é curta e o
+       esmaecido na borda direita já sinaliza que tem mais coisa (mesma
+       escolha da barra de categorias, ver .gi-mobile-category-tabs). */
     scrollbar-width: none;
     -ms-overflow-style: none;
     scroll-snap-type: x proximity;
+    /* esmaecido na ponta direita — a fileira "dissolve" na borda em vez de
+       ser cortada em seco, sinalizando que dá pra deslizar pra ver mais. */
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 26px), transparent);
+    mask-image: linear-gradient(to right, black calc(100% - 26px), transparent);
   }
 
   .module-tabs::-webkit-scrollbar {
