@@ -27,8 +27,29 @@ export function initCustomCursor() {
 
   let visible = false;
   let pressed = false;
+  let hovering = false;
   let lastX = 0;
   let lastY = 0;
+
+  // "clicável" — cobre os elementos nativos de sempre (link/botão/input)
+  // mais os controles próprios do app (que são <div>/<label> com onClick,
+  // não têm semântica nativa nenhuma pro navegador reconhecer sozinho).
+  // Curada explicitamente (em vez de tentar ler `cursor:pointer` computado)
+  // porque cursor:none já está forçado em TUDO (.custom-cursor-active *),
+  // então não sobra nenhum jeito de perguntar ao navegador "isso seria um
+  // ponteirinho por padrão?" — a resposta sempre viria "none".
+  const HOVER_SELECTOR = [
+    'a',
+    'button',
+    'input',
+    'select',
+    'textarea',
+    'label',
+    '[role="button"]',
+    '[role="tab"]',
+    '[role="slider"]',
+    '[tabindex]',
+  ].join(', ');
 
   function show() {
     if (visible) return;
@@ -54,6 +75,18 @@ export function initCustomCursor() {
     lastX = e.clientX;
     lastY = e.clientY;
     applyTransform();
+    // delegação em cima do próprio mousemove (não um listener 'mouseover'
+    // à parte) — o app troca o conteúdo da sidebar inteiro toda hora
+    // (buildSidebar() reconstrói do zero a cada ajuste, ver os módulos),
+    // então um listener por elemento ficaria "furando" toda vez que algo
+    // clicável reaparecesse com outra referência de nó; checar a cada
+    // movimento de mouse (via closest, barato) sempre acerta o elemento que
+    // está de verdade sob o cursor AGORA, sem precisar reconectar nada.
+    const isHovering = Boolean(e.target.closest?.(HOVER_SELECTOR));
+    if (isHovering !== hovering) {
+      hovering = isHovering;
+      cursor.classList.toggle('hover', hovering);
+    }
   }
 
   function onDown() {

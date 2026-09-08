@@ -251,6 +251,11 @@ const STRINGS = {
     videoFreezeButton: 'Congelar quadro',
     videoUnfreezeButton: 'Continuar',
     videoCameraLabel: 'Câmera',
+
+    tabGradient: 'Gradiente',
+    gradientScaleLabel: 'Escala das manchas',
+    gradientTurbulenceLabel: 'Turbulência',
+    gradientSpeedLabel: 'Velocidade',
   },
   en: {
     appTitle: 'Procedural Geometric Generator',
@@ -499,6 +504,11 @@ const STRINGS = {
     videoFreezeButton: 'Freeze frame',
     videoUnfreezeButton: 'Resume',
     videoCameraLabel: 'Camera',
+
+    tabGradient: 'Gradient',
+    gradientScaleLabel: 'Blob scale',
+    gradientTurbulenceLabel: 'Turbulence',
+    gradientSpeedLabel: 'Speed',
   },
 };
 

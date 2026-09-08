@@ -2,6 +2,7 @@ import { createModuleSwitcher } from './ui/module-switcher.js';
 import { gridIconsModule } from './modules/grid-icons/index.js';
 import { mosaicModule } from './modules/mosaic/index.js';
 import { videoTilesModule } from './modules/video-tiles/index.js';
+import { gradientTilesModule } from './modules/gradient-tiles/index.js';
 import { initCustomCursor } from './ui/customCursor.js';
 import { renderDynamicLogo } from './ui/dynamicLogo.js';
 import { getLang, setLang, onLangChange, AVAILABLE_LANGS } from './core/i18n.js';
@@ -25,6 +26,10 @@ function updateLogoAndFavicon(moduleId) {
   const gridSize = currentModuleId === 'mosaic' ? 3 : 2;
   const logoSvg = renderDynamicLogo(gridSize);
   logoEl.innerHTML = logoSvg;
+  // aba Gradiente: logo fica girando de cor sozinho (ver @keyframes
+  // logo-hue-cycle em style.css) — as outras abas não ganham essa classe,
+  // continuam do jeito de sempre.
+  logoEl.classList.toggle('logo-hue-cycle', currentModuleId === 'gradient');
 
   // troca o <link> inteiro (tira o antigo, bota um novo) em vez de só
   // mudar o href do que já existe — alguns navegadores (esp. Chrome) não
@@ -69,4 +74,4 @@ onLangChange(renderLangSwitcher);
 
 const app = document.getElementById('app');
 const moduleTabsSlot = document.getElementById('module-tabs-slot');
-createModuleSwitcher(app, [gridIconsModule, mosaicModule, videoTilesModule], moduleTabsSlot, { onActivate: updateLogoAndFavicon });
+createModuleSwitcher(app, [gridIconsModule, mosaicModule, videoTilesModule, gradientTilesModule], moduleTabsSlot, { onActivate: updateLogoAndFavicon });

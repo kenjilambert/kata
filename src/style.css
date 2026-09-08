@@ -222,6 +222,23 @@ body {
   width: 28px;
 }
 
+/* logo da aba Gradiente: em vez de sortear uma composição nova (o que o
+   Espelho já faz, ver setInterval em main.js), aqui o desenho fica FIXO e só
+   a COR gira continuamente — filter:hue-rotate em loop puro CSS (sem custo
+   de JS nenhum, sem recalcular SVG a cada quadro) já entrega exatamente
+   "logo mudando de cor" sem competir por CPU com o campo de ruído da aba
+   (ver comentário RENDER_MIN_DT em gradient-tiles/engine.js). Ligada/
+   desligada via classe (ver updateLogoAndFavicon em main.js) — as outras
+   abas continuam exatamente como estavam. */
+.app-logo.logo-hue-cycle svg {
+  animation: logo-hue-cycle 6s linear infinite;
+}
+
+@keyframes logo-hue-cycle {
+  from { filter: hue-rotate(0deg); }
+  to { filter: hue-rotate(360deg); }
+}
+
 .lang-switcher {
   /* fica de fora da pílula centralizada, sempre no canto — .brand não
      ocupa mais espaço no fluxo normal do header (position:absolute), esse
@@ -2958,6 +2975,21 @@ body {
     min-height: 0;
     overflow-y: auto;
   }
+
+  /* mesmo mecanismo acima, aba Gradiente (.vt-controls reaproveitada — ver
+     .mo-controls.vt-controls em gradient-tiles/index.js —, ids gt-cat-*
+     pra não colidir com as do Espelho, vt-cat-*). */
+  .vt-controls:has(#gt-cat-format:checked) [data-section-id='format'],
+  .vt-controls:has(#gt-cat-grid:checked) [data-section-id='grid'],
+  .vt-controls:has(#gt-cat-shapes:checked) [data-section-id='shapes'],
+  .vt-controls:has(#gt-cat-gradient:checked) [data-section-id='gradient'],
+  .vt-controls:has(#gt-cat-colors:checked) [data-section-id='colors'],
+  .vt-controls:has(#gt-cat-record:checked) [data-section-id='record'] {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
 }
 
 /* ==========================================================================
@@ -2984,6 +3016,20 @@ body {
   cursor: none !important;
 }
 
+/* mesmo caso do slider acima: a barra de rolagem customizada (ver
+   *::-webkit-scrollbar* no topo do arquivo) também é feita de pseudo-
+   elementos, que o `*` não alcança — sem isso, encostar o mouse EM CIMA da
+   barra (não só no conteúdo ao lado) trazia de volta a setinha padrão do
+   Windows. Só funciona no Chromium (Chrome/Brave/Edge — mesmo motor que já
+   permite estilizar a barra em si); Firefox não expõe esses pseudo-
+   elementos, então lá a barra nativa continua com o cursor do sistema (sem
+   jeito só com CSS). */
+.custom-cursor-active *::-webkit-scrollbar-thumb,
+.custom-cursor-active *::-webkit-scrollbar-track,
+.custom-cursor-active *::-webkit-scrollbar-button {
+  cursor: none !important;
+}
+
 .custom-cursor {
   position: fixed;
   top: 0;
@@ -2999,14 +3045,23 @@ body {
   opacity: 1;
 }
 
-/* creme sólido + mix-blend-mode:difference — em vez de uma cor fixa (que
-   sumia de vista em cima de fundo parecido), a diferença de cores com o
-   que tá embaixo faz o cursor "inverter" o que ele cobre, sempre visível
-   não importa a cor por baixo (mesmo truque de vários portfólios). */
+/* azul sólido (--accent-2) por padrão, cor cheia normal (sem inverter nada
+   por baixo) — só quando passa por cima de algo clicável (ver .custom-
+   cursor.hover, ligada via JS em customCursor.js) é que vira negativo de
+   verdade (branco + mix-blend-mode:difference: onde encostar em qualquer
+   cor por baixo, o resultado é o "255 menos essa cor", igual o efeito do
+   kenjilambert.com). Segurando o clique fica vermelho (--accent) — 3
+   estados bem distintos: azul (padrão) / negativo (hover) / vermelho
+   (clicando). */
 .custom-cursor-shape {
-  fill: var(--text);
-  mix-blend-mode: difference;
+  fill: var(--accent-2);
+  mix-blend-mode: normal;
   transition: fill 0.1s ease;
+}
+
+.custom-cursor.hover .custom-cursor-shape {
+  fill: #ffffff;
+  mix-blend-mode: difference;
 }
 
 .custom-cursor.pressed {
@@ -3014,9 +3069,11 @@ body {
 }
 
 /* segurando o clique (arrastando um slider, por ex.) — troca de forma
-   (seta vira bolinha cheia) e de cor: sai do "inverte o fundo" pra um
-   vermelho sólido de verdade, confirmação bem mais clara de que o clique
-   registrou do que só o scale(0.85) que já existia. */
+   (seta vira bolinha cheia) e de cor pra vermelho sólido, confirmação bem
+   mais clara de que o clique registrou do que só o scale(0.85) que já
+   existia. Vence o estado de hover (mesma especificidade, mas vem depois
+   no arquivo) — segurando o clique em cima de algo clicável, o vermelho
+   ainda manda. */
 .custom-cursor-arrow {
   display: block;
 }
