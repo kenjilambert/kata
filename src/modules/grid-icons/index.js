@@ -60,7 +60,14 @@ function loadSavedPresets() {
   try {
     const raw = localStorage.getItem(PRESETS_STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    // valida CADA item, não só o array: antes bastava um item inválido
+    // (null, número, objeto sem `name`) pra o `preset.name` estourar dentro
+    // do mount() e a aba Azulejo não renderizar NADA — silenciosamente
+    // (rejeição não tratada) e pra sempre, já que fica no localStorage.
+    return parsed.filter(
+      (p) => p && typeof p === 'object' && typeof p.name === 'string' && p.snapshot && typeof p.snapshot === 'object'
+    );
   } catch (err) {
     return [];
   }
@@ -118,6 +125,14 @@ export const gridIconsModule = {
     // mobile isso já valia (calculado 1x no mount — não muda se a pessoa
     // girar a tela ou redimensionar depois); agora vale igual no desktop.
     const isMobileViewport = window.matchMedia('(max-width: 768px)').matches;
+    // versão AO VIVO da checagem acima. A const é fixada na montagem de
+    // propósito (a estrutura da sidebar/aba de categorias é montada uma vez
+    // só), mas computePreviewBoxSize roda de novo a cada resize — e usando o
+    // valor congelado, girar o celular cruzando os 768px fazia ele medir o
+    // elemento errado (toolbarRail é display:none no desktop, offsetHeight
+    // 0), calculando um preview ~80px mais alto do que cabe e cortando a
+    // trilha de botões até trocar de aba ou recarregar.
+    const isMobileNow = () => window.matchMedia('(max-width: 768px)').matches;
     const collapsedSections = {
       reference: false,
       grid: false,
@@ -228,9 +243,14 @@ export const gridIconsModule = {
     function applySnapshot(snapshot) {
       pushToHistory();
       Object.assign(state, snapshot);
-      state.colors = snapshot.colors.map((c) => ({ ...c }));
-      state.shapesAllowed = [...snapshot.shapesAllowed];
-      state.customShapes = snapshot.customShapes.map((s) => ({ ...s }));
+      // fallbacks nas 3 listas: um snapshot sem elas (código compartilhado
+      // truncado, preset de uma versão antiga do app) estourava TypeError
+      // AQUI — depois do Object.assign acima, ou seja, com o state já
+      // mutado e sem buildSidebar()/render() rodarem: o app ficava pela
+      // metade, e o erro nem caía na mensagem de "código inválido".
+      state.colors = Array.isArray(snapshot.colors) ? snapshot.colors.map((c) => ({ ...c })) : state.colors;
+      state.shapesAllowed = Array.isArray(snapshot.shapesAllowed) ? [...snapshot.shapesAllowed] : state.shapesAllowed;
+      state.customShapes = Array.isArray(snapshot.customShapes) ? snapshot.customShapes.map((s) => ({ ...s })) : [];
       normalizeFillStrokeFields(snapshot);
       refreshGridOverrideIfEditing();
       buildSidebar();
@@ -1204,7 +1224,7 @@ export const gridIconsModule = {
       // suficiente pro tamanho de ANTES, cortando o que vem embaixo do
       // preview quando aquilo cresce.
       const belowReserved =
-        (isMobileViewport ? toolbarRail.offsetHeight + 20 : stageToolbar.offsetHeight + 80) + stagePadBottom;
+        (isMobileNow() ? toolbarRail.offsetHeight + 20 : stageToolbar.offsetHeight + 80) + stagePadBottom;
       // no mobile (.gi-layout em coluna) o preview e a sidebar de ajustes
       // disputam a MESMA altura de tela — sem reservar um mínimo pra
       // sidebar aqui, um preview quadrado grande podia tomar quase a tela
@@ -1221,7 +1241,7 @@ export const gridIconsModule = {
       // categorias sempre visível (fechada), não o painel inteiro; isso
       // já é reservado sozinho por causa do overlay, não precisa de mais
       // altura reservada aqui.
-      const controlsMinHeight = isMobileViewport ? (mobileCategoryTabsEl?.offsetHeight ?? 90) + 12 : 0;
+      const controlsMinHeight = isMobileNow() ? (mobileCategoryTabsEl?.offsetHeight ?? 90) + 12 : 0;
       const maxH = Math.max(160, window.innerHeight - top - belowReserved - controlsMinHeight);
       let w = maxW;
       let h = w / ratio;
@@ -1387,9 +1407,14 @@ export const gridIconsModule = {
     function decodeShareCode(code) {
       try {
         const snapshot = JSON.parse(decodeURIComponent(atob(code.trim())));
-        // checagem mínima — um texto qualquer colado ali não deveria
-        // conseguir passar por "snapshot válido" e quebrar o resto do app.
-        if (!snapshot || typeof snapshot !== 'object' || !Array.isArray(snapshot.colors)) return null;
+        // um texto qualquer colado ali não deveria conseguir passar por
+        // "snapshot válido" e quebrar o resto do app. Checa as 3 listas que
+        // applySnapshot desreferencia — antes só `colors` era exigida, então
+        // um código truncado passava e estourava lá dentro, já com o state
+        // mutado (melhor recusar aqui e mostrar "Código inválido").
+        if (!snapshot || typeof snapshot !== 'object') return null;
+        if (!Array.isArray(snapshot.colors) || !snapshot.colors.length) return null;
+        if (!Array.isArray(snapshot.shapesAllowed) || !snapshot.shapesAllowed.length) return null;
         return snapshot;
       } catch (err) {
         return null;

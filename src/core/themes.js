@@ -26,11 +26,31 @@ const BLANK_THEME = {
 };
 
 // devolve o dicionário completo de temas (chave → receita) — cada módulo
-// que precisa carrega o próprio (fetch é barato/cacheado pelo navegador),
-// em vez de depender de um módulo já ter carregado antes.
-export async function loadThemes() {
-  const fetchedThemes = await fetch(THEMES_URL).then((res) => res.json());
-  return { blank: BLANK_THEME, ...fetchedThemes };
+// que precisa chama isso, em vez de depender de um módulo já ter carregado
+// antes.
+//
+// Cache de módulo: o themes.json é estático e nunca muda em runtime, mas isso
+// é chamado a cada montagem de aba (Azulejo, Espelho, Gradiente) — sem cache,
+// cada troca de aba refazia um fetch de verdade, deixando o mount() async por
+// vários milissegundos sem necessidade; era justamente essa janela que
+// permitia a corrida de troca de abas (ver o comentário em
+// ui/module-switcher.js). Guarda a PROMESSA (não o resultado) pra duas
+// montagens simultâneas compartilharem o mesmo fetch em vez de disparar dois.
+let themesPromise = null;
+
+export function loadThemes() {
+  if (!themesPromise) {
+    themesPromise = fetch(THEMES_URL)
+      .then((res) => res.json())
+      .then((fetchedThemes) => ({ blank: BLANK_THEME, ...fetchedThemes }))
+      .catch((err) => {
+        // uma falha de rede não pode virar cache permanente de erro — zera
+        // pra próxima tentativa poder buscar de novo.
+        themesPromise = null;
+        throw err;
+      });
+  }
+  return themesPromise;
 }
 
 // aplica um tema no patternState (compartilhado — qualquer módulo que leia

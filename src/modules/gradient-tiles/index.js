@@ -151,27 +151,41 @@ export const gradientTilesModule = {
       }, 500);
     }
 
-    async function handleGifClick() {
-      if (engine.isGifRecording()) {
-        stopGifTimer();
-        const blob = await engine.stopGifRecording();
-        gifButton.el.querySelector('.control-button-label').textContent = t('videoGifButton');
-        gifButton.el.classList.remove('vt-recording');
-        if (blob) {
-          downloadBlob(blob, 'kata-gradiente.gif');
-          flashExportSuccess(gifButton.el);
-        }
-        return;
+    // start e stop separados de propósito. Antes era uma função só e o timer
+    // chamava ELA quando o motor batia no teto de 8s — mas nesse instante
+    // isGifRecording() já era false, então a chamada caía no ramo de INICIAR:
+    // a gravação recomeçava sozinha, um setInterval novo sobrescrevia o
+    // anterior sem limpá-lo (acumulando um por ciclo de 8s, pra sempre) e o
+    // GIF nunca era baixado. Agora o timer só sabe PARAR.
+    async function stopGif() {
+      stopGifTimer();
+      const blob = await engine.stopGifRecording();
+      gifButton.el.querySelector('.control-button-label').textContent = t('videoGifButton');
+      gifButton.el.classList.remove('vt-recording');
+      if (blob) {
+        downloadBlob(blob, 'kata-gradiente.gif');
+        flashExportSuccess(gifButton.el);
       }
+    }
+
+    function startGif() {
       engine.startGifRecording();
       gifButton.el.classList.add('vt-recording');
       const startedAt = Date.now();
       const labelEl = gifButton.el.querySelector('.control-button-label');
       labelEl.textContent = `${t('videoStopGifButton')} · 0:00`;
+      stopGifTimer();
       gifTimerId = setInterval(() => {
         labelEl.textContent = `${t('videoStopGifButton')} · ${formatSeconds(Date.now() - startedAt)}`;
-        if (!engine.isGifRecording()) handleGifClick();
+        // o motor para de capturar sozinho no teto de duração (ver
+        // GIF_MAX_SECONDS em engine.js) — aqui só finaliza e baixa.
+        if (!engine.isGifRecording()) stopGif();
       }, 500);
+    }
+
+    function handleGifClick() {
+      if (engine.isGifRecording() || gifTimerId) stopGif();
+      else startGif();
     }
 
     function buildSidebar() {

@@ -23,9 +23,19 @@ export function createModuleSwitcher(container, modules, tabsContainer, { onActi
   (tabsContainer ?? container).appendChild(tabs);
   container.appendChild(content);
 
-  function activate(mod) {
-    if (current?.unmount) current.unmount();
-    content.innerHTML = '';
+  // troca de aba é SERIALIZADA. mount() pode ser async (o Espelho espera o
+  // themes.json, por ex.) e antes isso rodava sem await: clicar em duas abas
+  // rápido fazia o mount da primeira terminar DEPOIS do da segunda e injetar
+  // a interface dela dentro do painel da outra — dava duas sidebars/dois
+  // canvas na tela ao mesmo tempo, e o motor da aba abandonada ficava rodando
+  // pra sempre sem ninguém poder pará-lo (unmount() dela já tinha rodado
+  // antes do motor existir). Agora, um clique que chega durante um mount fica
+  // guardado em `pending` e só é aplicado quando o anterior termina —
+  // guardando só o ÚLTIMO pedido (rajada de cliques não empilha montagens).
+  let busy = false;
+  let pending = null;
+
+  function markActiveTab(mod) {
     tabs.querySelectorAll('[role="tab"]').forEach((b) => {
       const isActive = b.dataset.id === mod.id;
       b.classList.toggle('active', isActive);
@@ -33,9 +43,30 @@ export function createModuleSwitcher(container, modules, tabsContainer, { onActi
       b.tabIndex = isActive ? 0 : -1;
     });
     content.setAttribute('aria-labelledby', `module-tab-${mod.id}`);
-    current = mod;
-    mod.mount(content);
-    onActivate?.(mod.id);
+  }
+
+  async function activate(mod) {
+    if (busy) {
+      // marca a aba clicada na hora (resposta visual imediata), mas só troca
+      // de verdade quando a montagem em curso terminar.
+      pending = mod;
+      markActiveTab(mod);
+      return;
+    }
+    busy = true;
+    try {
+      if (current?.unmount) current.unmount();
+      content.innerHTML = '';
+      markActiveTab(mod);
+      current = mod;
+      await mod.mount(content);
+      onActivate?.(mod.id);
+    } finally {
+      busy = false;
+    }
+    const next = pending;
+    pending = null;
+    if (next && next !== current) await activate(next);
   }
 
   // pílula "PillNav" (inspirado no componente React Bits do mesmo nome,

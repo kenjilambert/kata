@@ -14,6 +14,15 @@ const GIF_FPS = 12;
 const GIF_MAX_SECONDS = 8;
 const OUTPUT_MAX_DIM = 900;
 
+// teto de amostras do campo de ruído por eixo (ver renderFrame) — acima disso
+// o campo é interpolado em vez de amostrado célula por célula. 52 cobre a
+// resolução padrão (40) sem interpolar quase nada e segura o custo na
+// resolução máxima (96).
+const FIELD_MAX_SAMPLES = 52;
+
+// passos da tabela de cores pré-calculada do gradiente (ver colorLut)
+const COLOR_LUT_STEPS = 128;
+
 function computeGrid(resolution, ratio) {
   return framedGridDims(resolution, ratio);
 }
@@ -160,6 +169,19 @@ export function createGradientTilesEngine(outputCanvas) {
 
   let cellAssignments = null;
   let cellAssignmentsKey = '';
+  // buffer reaproveitado entre quadros da grade de amostras do campo (ver
+  // FIELD_MAX_SAMPLES e o comentário em renderFrame) — realocar um
+  // Float32Array 24x por segundo só daria trabalho pro coletor de lixo.
+  let field = null;
+  // tabela de cores do gradiente pré-calculada (ver rebuildColorLutIfNeeded):
+  // interpolateGradient montava uma STRING `rgb(...)` nova por célula — 9216
+  // strings por quadro na resolução máxima, que o navegador ainda tinha que
+  // reinterpretar a cada fillStyle. Medido: só as trocas de fillStyle custavam
+  // ~3,6ms dos ~21ms do quadro. Com a tabela são 128 strings por quadro, e o
+  // fillStyle passa a receber sempre a MESMA referência de string (cache de
+  // parsing do navegador). 128 passos num gradiente é imperceptível a olho.
+  let colorLut = null;
+  let colorLutKey = '';
 
   const options = {
     resolution: 40,
@@ -194,6 +216,16 @@ export function createGradientTilesEngine(outputCanvas) {
     }));
   }
 
+  function rebuildColorLutIfNeeded() {
+    const key = options.colors.map((c) => c.color).join(',');
+    if (colorLut && colorLutKey === key) return;
+    colorLutKey = key;
+    colorLut = new Array(COLOR_LUT_STEPS);
+    for (let i = 0; i < COLOR_LUT_STEPS; i++) {
+      colorLut[i] = interpolateGradient(i / (COLOR_LUT_STEPS - 1), options.colors);
+    }
+  }
+
   function setOptions(partial) {
     Object.assign(options, partial);
     const { cols, rows } = computeGrid(options.resolution, options.ratio);
@@ -219,6 +251,7 @@ export function createGradientTilesEngine(outputCanvas) {
 
     const cellSize = outW / cols;
     rebuildCellShapesIfNeeded();
+    rebuildColorLutIfNeeded();
 
     // frequência espacial em unidades de CÉLULA (não normalizada por
     // cols/rows) — assim o tamanho físico das manchas fica igual não
@@ -246,18 +279,56 @@ export function createGradientTilesEngine(outputCanvas) {
     const driftX = dx * time * driftWeight;
     const driftY = dy * time * driftWeight;
 
+    // O campo é amostrado numa grade PRÓPRIA, no máximo FIELD_MAX_SAMPLES por
+    // eixo, e interpolado (bilinear) pras células — não uma amostra de
+    // warpedPattern por célula. Na resolução máxima (96×96 = 9216 células)
+    // era ~1,5 milhão de operações de hash por quadro: 20-35ms de main thread
+    // travada por render, que é exatamente o que fazia o mouse arrastar com
+    // essa aba aberta. Amostrando 53×53 e interpolando, cai ~3,3x. Dá no
+    // mesmo visualmente porque o campo é SUAVE por construção (fbm) — entre
+    // duas amostras vizinhas ele não tem detalhe nenhum pra perder.
+    const fw = Math.min(cols, FIELD_MAX_SAMPLES);
+    const fh = Math.min(rows, FIELD_MAX_SAMPLES);
+    if (!field || field.length < (fw + 1) * (fh + 1)) field = new Float32Array((fw + 1) * (fh + 1));
+    const colSpan = Math.max(1, cols - 1);
+    const rowSpan = Math.max(1, rows - 1);
+    for (let j = 0; j <= fh; j++) {
+      for (let i = 0; i <= fw; i++) {
+        const sampleCol = (i / fw) * colSpan;
+        const sampleRow = (j / fh) * rowSpan;
+        field[j * (fw + 1) + i] = warpedPattern(
+          sampleCol * cellFreq + driftX,
+          sampleRow * cellFreq + driftY,
+          z,
+          warp,
+          options.seed
+        );
+      }
+    }
+
     for (let r = 0; r < rows; r++) {
+      // posição desta linha na grade de amostras + peso da interpolação
+      const v = (r / rowSpan) * fh;
+      const j0 = Math.min(fh - 1, Math.floor(v));
+      const tv = v - j0;
       for (let c = 0; c < cols; c++) {
-        const nx = c * cellFreq + driftX;
-        const ny = r * cellFreq + driftY;
-        const raw = warpedPattern(nx, ny, z, warp, options.seed);
+        const u = (c / colSpan) * fw;
+        const i0 = Math.min(fw - 1, Math.floor(u));
+        const tu = u - i0;
+        const row0 = j0 * (fw + 1);
+        const row1 = row0 + (fw + 1);
+        const a = field[row0 + i0];
+        const b = field[row0 + i0 + 1];
+        const cc = field[row1 + i0];
+        const dd = field[row1 + i0 + 1];
+        const raw = (a + (b - a) * tu) + ((cc + (dd - cc) * tu) - (a + (b - a) * tu)) * tv;
         // realça o contraste (fbm de ruído de valor tende a ficar
         // concentrado perto de 0.5) — sem isso quase toda célula saía com
         // forma parecida, sem o "respiro" de vazio/cheio que dá o efeito
         // de dithering de verdade.
         const value = Math.min(1, Math.max(0, 0.5 + (raw - 0.5) * 1.9));
 
-        const color = interpolateGradient(value, options.colors);
+        const color = colorLut[(value * (COLOR_LUT_STEPS - 1)) | 0];
         const scale = value * options.shapeScale;
 
         const { shapeKey, orientation } = cellAssignments[r * cols + c];
@@ -362,7 +433,17 @@ export function createGradientTilesEngine(outputCanvas) {
     const { width, height } = gifRecordingSize;
     gifCtx.drawImage(outputCanvas, 0, 0, width, height);
     gifFrames.push(gifCtx.getImageData(0, 0, width, height).data);
-    if (gifFrames.length >= GIF_FPS * GIF_MAX_SECONDS) stopGifRecording();
+    // bateu no teto de duração: para de CAPTURAR, mas guarda os quadros —
+    // quem chamar stopGifRecording() depois (a UI, ao ver isGifRecording()
+    // virar false) ainda recebe o GIF montado. Antes isso chamava
+    // stopGifRecording() aqui e DESCARTAVA o blob devolvido, então todo GIF
+    // que batia no teto de 8s era perdido sem aviso.
+    if (gifFrames.length >= GIF_FPS * GIF_MAX_SECONDS) stopGifCapture();
+  }
+
+  function stopGifCapture() {
+    if (gifTimerId != null) clearInterval(gifTimerId);
+    gifTimerId = null;
   }
 
   function isGifRecording() {
@@ -398,10 +479,13 @@ export function createGradientTilesEngine(outputCanvas) {
   }
 
   function stopGifRecording() {
-    if (!isGifRecording()) return Promise.resolve(null);
-    clearInterval(gifTimerId);
-    gifTimerId = null;
-    if (!gifFrames.length) return Promise.resolve(null);
+    // não desiste só porque a captura já parou (teto de 8s) — o que decide se
+    // tem GIF pra devolver são os QUADROS guardados, não o timer.
+    stopGifCapture();
+    if (!gifFrames || !gifFrames.length) {
+      gifFrames = null;
+      return Promise.resolve(null);
+    }
     const palette = buildGifPalette();
     const { width, height } = gifRecordingSize;
     const blob = encodeGif({ width, height, frames: gifFrames, palette, delayCs: Math.round(100 / GIF_FPS) });
@@ -412,7 +496,7 @@ export function createGradientTilesEngine(outputCanvas) {
   function destroy() {
     stop();
     if (isRecording()) recorder.stop();
-    if (isGifRecording()) clearInterval(gifTimerId);
+    stopGifCapture();
   }
 
   return {

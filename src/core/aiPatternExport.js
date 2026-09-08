@@ -186,10 +186,17 @@ function arcToBeziers(x1, y1, rx, ry, xAxisRotationDeg, largeArcFlag, sweepFlag,
   return beziers;
 }
 
-// só M/L/H/V/C/A/Z, todos absolutos (é tudo que shapes.js emite) — cada
-// arco (A) já sai desta função convertido em uma ou mais curvas (C).
+// M/L/H/V/C/A/Z absolutos (é tudo que shapes.js emite) + Q (convertido pra
+// cúbica) e S/T reconhecidos-e-pulados: ícones ENVIADOS pela pessoa vêm de
+// Illustrator/Figma, que usam Q/S/T à vontade.
+//
+// Q/S/T precisam estar no match mesmo sem `case` próprio: sem serem
+// reconhecidos como COMANDO, a letra era descartada pelo regex e só os
+// números dela sobravam soltos — lidos então como argumentos do comando
+// ANTERIOR (geometria deformada) e, depois de um Z, travando o laço pra
+// sempre (ver o `cmd = null` no case 'Z' mais abaixo).
 function parsePathD(d) {
-  const tokens = d.match(/[MLCAZHV]|-?\d*\.?\d+(?:e[-+]?\d+)?/gi) || [];
+  const tokens = d.match(/[MLCAZHVQST]|-?\d*\.?\d+(?:e[-+]?\d+)?/gi) || [];
   const subpaths = [];
   let current = null;
   let cx = 0;
@@ -207,19 +214,24 @@ function parsePathD(d) {
     cx = x;
     cy = y;
   }
+  // os dois abrem um subpath no ponto atual se ainda não existir nenhum: um
+  // `d` que não comece com M (ou que use L logo depois de um Z) estourava
+  // TypeError em current.push, derrubando a exportação inteira.
   function lineTo(x, y) {
+    if (!current) startSubpath(cx, cy);
     current.push({ op: 'l', x, y });
     cx = x;
     cy = y;
   }
   function curveTo(x1, y1, x2, y2, x, y) {
+    if (!current) startSubpath(cx, cy);
     current.push({ op: 'c', x1, y1, x2, y2, x, y });
     cx = x;
     cy = y;
   }
 
   while (i < tokens.length) {
-    if (/^[MLCAZHV]$/i.test(tokens[i])) {
+    if (/^[MLCAZHVQST]$/i.test(tokens[i])) {
       cmd = tokens[i].toUpperCase();
       i++;
     }
@@ -258,10 +270,28 @@ function parsePathD(d) {
         );
         break;
       }
+      case 'Q': {
+        // quadrática → cúbica (fórmula exata): os 2 controles da cúbica ficam
+        // a 2/3 do caminho de cada ponta até o controle único da quadrática.
+        const qx = +tokens[i];
+        const qy = +tokens[i + 1];
+        const ex = +tokens[i + 2];
+        const ey = +tokens[i + 3];
+        i += 4;
+        if (!current) startSubpath(cx, cy);
+        curveTo(cx + (2 / 3) * (qx - cx), cy + (2 / 3) * (qy - cy), ex + (2 / 3) * (qx - ex), ey + (2 / 3) * (qy - ey), ex, ey);
+        break;
+      }
       case 'Z':
         if (current) current.push({ op: 'h' });
         cx = startX;
         cy = startY;
+        // Z não tem argumentos: sem zerar o cmd aqui, um número solto depois
+        // do Z (o que sobra de um S/T não suportado) voltava pra este case
+        // sem NUNCA avançar o i — laço infinito, aba congelada de vez, sem
+        // erro nenhum no console. Zerado, o token cai no `default` abaixo e
+        // é descartado.
+        cmd = null;
         break;
       default:
         i++;

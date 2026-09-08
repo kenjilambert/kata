@@ -451,7 +451,17 @@ export function createVideoTilesEngine(outputCanvas) {
     const { width, height } = gifRecordingSize;
     gifCtx.drawImage(outputCanvas, 0, 0, width, height);
     gifFrames.push(gifCtx.getImageData(0, 0, width, height).data);
-    if (gifFrames.length >= GIF_FPS * GIF_MAX_SECONDS) stopGifRecording();
+    // bateu no teto de duração: para de CAPTURAR, mas guarda os quadros —
+    // quem chamar stopGifRecording() depois (a UI, ao ver isGifRecording()
+    // virar false) ainda recebe o GIF montado. Antes isso chamava
+    // stopGifRecording() aqui e DESCARTAVA o blob devolvido, então todo GIF
+    // que batia no teto de 8s era perdido sem aviso.
+    if (gifFrames.length >= GIF_FPS * GIF_MAX_SECONDS) stopGifCapture();
+  }
+
+  function stopGifCapture() {
+    if (gifTimerId != null) clearInterval(gifTimerId);
+    gifTimerId = null;
   }
 
   function isGifRecording() {
@@ -506,10 +516,13 @@ export function createVideoTilesEngine(outputCanvas) {
   }
 
   function stopGifRecording() {
-    if (!isGifRecording()) return Promise.resolve(null);
-    clearInterval(gifTimerId);
-    gifTimerId = null;
-    if (!gifFrames.length) return Promise.resolve(null);
+    // não desiste só porque a captura já parou (teto de 8s) — o que decide se
+    // tem GIF pra devolver são os QUADROS guardados, não o timer.
+    stopGifCapture();
+    if (!gifFrames || !gifFrames.length) {
+      gifFrames = null;
+      return Promise.resolve(null);
+    }
     const palette = buildGifPalette();
     const { width, height } = gifRecordingSize;
     const blob = encodeGif({ width, height, frames: gifFrames, palette, delayCs: Math.round(100 / GIF_FPS) });
@@ -521,7 +534,7 @@ export function createVideoTilesEngine(outputCanvas) {
     stop();
     clearSource();
     if (isRecording()) recorder.stop();
-    if (isGifRecording()) clearInterval(gifTimerId);
+    stopGifCapture();
   }
 
   return {

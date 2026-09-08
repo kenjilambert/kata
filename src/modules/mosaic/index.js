@@ -3,7 +3,7 @@ import { createSlider } from '../../ui/controls/slider.js';
 import { createSelect } from '../../ui/controls/select.js';
 import { createIconSelect } from '../../ui/controls/iconSelect.js';
 import { createToggleSwitch } from '../../ui/controls/toggleSwitch.js';
-import { createButton, flashExportSuccess } from '../../ui/controls/button.js';
+import { createButton, setButtonLabel, flashExportSuccess } from '../../ui/controls/button.js';
 import { createSection } from '../../ui/controls/section.js';
 import { exportSvgString, exportPngFromSvgString } from '../../core/export.js';
 import { exportSeamlessPatternAsAi } from '../../core/aiPatternExport.js';
@@ -584,7 +584,10 @@ export const mosaicModule = {
     cleanupLang = onLangChange(() => {
       resultTitle.textContent = t('mosaicResultTitle');
       repeatPreviewTitle.textContent = t('mosaicRepeatPreviewTitle');
-      shuffleButton.el.textContent = t('mosaicShuffleButton');
+      // setButtonLabel, não .textContent direto no botão: ele tem uma <span>
+      // de label por dentro (e às vezes um ícone), e .textContent apagava as
+      // duas — sobrava texto solto, sem o estilo que o CSS dá pra span.
+      setButtonLabel(shuffleButton.el, t('mosaicShuffleButton'));
       buildSidebar();
     });
   },

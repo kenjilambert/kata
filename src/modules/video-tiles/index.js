@@ -74,6 +74,13 @@ let cleanupLang = null;
 let engine = null;
 let recordTimerId = null;
 let gifTimerId = null;
+// destroy() do combo de Tema (createIconSelect) — ele registra 2 listeners em
+// `document` já na CRIAÇÃO, e buildSidebar() recria o combo a cada ajuste
+// (formato, modo de cor, tema, girar cores...). Sem chamar destroy antes de
+// recriar, cada ajuste deixava +2 listeners pendurados pra sempre, cada um
+// segurando uma subárvore de DOM já descartada — mesmo cuidado que o Mosaico
+// já tem com o select dele (ver cleanupGradientShapeSelect em mosaic/index.js).
+let cleanupThemeSelect = null;
 
 function formatSeconds(totalMs) {
   const s = Math.floor(totalMs / 1000);
@@ -217,31 +224,42 @@ export const videoTilesModule = {
       }, 500);
     }
 
-    async function handleGifClick() {
-      if (engine.isGifRecording()) {
-        stopGifTimer();
-        const blob = await engine.stopGifRecording();
-        gifButton.el.querySelector('.control-button-label').textContent = t('videoGifButton');
-        gifButton.el.classList.remove('vt-recording');
-        if (blob) {
-          downloadBlob(blob, 'kata-video.gif');
-          flashExportSuccess(gifButton.el);
-        }
-        return;
+    // start e stop separados de propósito. Antes era uma função só e o timer
+    // chamava ELA quando o motor batia no teto de 8s — mas nesse instante
+    // isGifRecording() já era false, então a chamada caía no ramo de INICIAR:
+    // a gravação recomeçava sozinha, um setInterval novo sobrescrevia o
+    // anterior sem limpá-lo (acumulando um por ciclo de 8s, pra sempre) e o
+    // GIF nunca era baixado. Agora o timer só sabe PARAR.
+    async function stopGif() {
+      stopGifTimer();
+      const blob = await engine.stopGifRecording();
+      gifButton.el.querySelector('.control-button-label').textContent = t('videoGifButton');
+      gifButton.el.classList.remove('vt-recording');
+      if (blob) {
+        downloadBlob(blob, 'kata-video.gif');
+        flashExportSuccess(gifButton.el);
       }
+    }
+
+    function startGif() {
       if (!engine.hasSource()) return;
       engine.startGifRecording();
       gifButton.el.classList.add('vt-recording');
       const startedAt = Date.now();
       const labelEl = gifButton.el.querySelector('.control-button-label');
       labelEl.textContent = `${t('videoStopGifButton')} · 0:00`;
+      stopGifTimer();
       gifTimerId = setInterval(() => {
         labelEl.textContent = `${t('videoStopGifButton')} · ${formatSeconds(Date.now() - startedAt)}`;
-        // o motor para sozinho ao bater no teto de duração do GIF (ver
-        // GIF_MAX_SECONDS em engine.js) — sem isso o timer visual continuaria
-        // contando mesmo depois da gravação de verdade já ter parado.
-        if (!engine.isGifRecording()) handleGifClick();
+        // o motor para de capturar sozinho no teto de duração (ver
+        // GIF_MAX_SECONDS em engine.js) — aqui só finaliza e baixa.
+        if (!engine.isGifRecording()) stopGif();
       }, 500);
+    }
+
+    function handleGifClick() {
+      if (engine.isGifRecording() || gifTimerId) stopGif();
+      else startGif();
     }
 
     // enumerateDevices() só devolve os deviceId/label de verdade depois de
@@ -269,6 +287,10 @@ export const videoTilesModule = {
     }
 
     function buildSidebar() {
+      if (cleanupThemeSelect) {
+        cleanupThemeSelect();
+        cleanupThemeSelect = null;
+      }
       sidebar.innerHTML = '';
 
       const uploadInput = document.createElement('input');
@@ -471,6 +493,7 @@ export const videoTilesModule = {
           applyOptionsAndMaybePalette();
         },
       });
+      cleanupThemeSelect = themeSelect.destroy;
       sidebar.appendChild(createSection(t('themeSectionTitle'), [themeSelect.el], { id: 'theme' }));
 
       const colorElements = [
@@ -711,6 +734,10 @@ export const videoTilesModule = {
     if (engine) {
       engine.destroy();
       engine = null;
+    }
+    if (cleanupThemeSelect) {
+      cleanupThemeSelect();
+      cleanupThemeSelect = null;
     }
     if (cleanupLang) {
       cleanupLang();

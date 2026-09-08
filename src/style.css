@@ -2558,18 +2558,51 @@ body {
     position: static;
     transform: none;
     gap: 8px;
+    /* min-width:0 é o que permite a pílula ENCOLHER dentro do header flex —
+       sem isso o conteúdo dela (as abas) define um piso de largura que o
+       flexbox respeita, e o excedente simplesmente vazava pra fora da tela
+       (o body é overflow:hidden, então não havia como rolar até ele). */
+    min-width: 0;
+    flex: 1 1 auto;
   }
 
+  /* as abas de módulo ROLAM na horizontal numa tela estreita. Eram 3 abas
+     quando esse layout foi desenhado ("compacto pra caber numa linha"); com
+     5 pílulas (Azulejo/Mosaico/Espelho/Gradiente/Em breve) a fileira precisa
+     de ~500px e num celular de 360-412px as últimas ficavam CORTADAS e
+     inalcançáveis — sem scroll horizontal, e o body é overflow:hidden. */
   .module-tabs {
     height: 34px;
     gap: 2px;
     padding: 2px;
+    min-width: 0;
+    overflow-x: auto;
+    /* barra de rolagem escondida: a fileira de pílulas é curta e o próprio
+       corte na borda já sinaliza que tem mais coisa (mesma escolha da barra
+       de categorias, ver .gi-mobile-category-tabs). */
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    scroll-snap-type: x proximity;
+  }
+
+  .module-tabs::-webkit-scrollbar {
+    display: none;
   }
 
   .module-tabs button,
   .module-tab-disabled {
     padding: 0 12px;
     font-size: 12px;
+    /* sem isso o flex encolhe as pílulas até o texto quebrar/sumir em vez de
+       deixar a fileira rolar. */
+    flex-shrink: 0;
+    scroll-snap-align: center;
+  }
+
+  /* logo e PT/EN nunca encolhem — quem cede espaço é a fileira de abas. */
+  .app-logo,
+  .lang-switcher {
+    flex-shrink: 0;
   }
 
   .app-logo {
