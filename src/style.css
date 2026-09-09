@@ -3265,9 +3265,20 @@ body {
    permite estilizar a barra em si); Firefox não expõe esses pseudo-
    elementos, então lá a barra nativa continua com o cursor do sistema (sem
    jeito só com CSS). */
+.custom-cursor-active *::-webkit-scrollbar,
 .custom-cursor-active *::-webkit-scrollbar-thumb,
 .custom-cursor-active *::-webkit-scrollbar-track,
-.custom-cursor-active *::-webkit-scrollbar-button {
+.custom-cursor-active *::-webkit-scrollbar-track-piece,
+.custom-cursor-active *::-webkit-scrollbar-button,
+.custom-cursor-active *::-webkit-scrollbar-corner {
+  /* faltavam `-track-piece` (a faixa vazia ACIMA/ABAIXO da bolinha — onde
+     você clica pra pular um trecho, ou arrasta passando por cima — é um
+     pseudo-elemento PRÓPRIO, diferente de `-track` sozinho) e o container
+     `::-webkit-scrollbar`/`-corner` em si: sem esses dois, encostar ou
+     clicar bem nessas áreas (não só em cima da bolinha) ainda trazia de
+     volta a setinha do sistema por cima da nossa — os "dois cursores" que
+     apareciam usando a barra de rolagem de verdade, não só passando o mouse
+     por cima dela parada. */
   cursor: none !important;
 }
 
