@@ -22,6 +22,15 @@ const GIF_MAX_SECONDS = 8;
 // mudar a nitidez/framerate da renderização.
 const OUTPUT_MAX_DIM = 900;
 
+// teto/piso do lado maior do canvas de saída no formato "Tela cheia" — a
+// caixa medida na tela pode ser bem maior ou menor que OUTPUT_MAX_DIM, mas
+// sem deixar o canvas virar gigante (custo de redesenhar cresce com a
+// área) nem minúsculo demais. Mesma função de gradient-tiles/sound-tiles.
+function clampOutputDim(requested) {
+  if (!requested) return OUTPUT_MAX_DIM;
+  return Math.max(480, Math.min(1400, Math.round(requested)));
+}
+
 // cols×rows a partir de uma "resolução" (densidade, eixo menor) + a
 // proporção pedida (1 = quadrado, 16/9 = paisagem, 9/16 = story...) — MESMA
 // conta de framedGridDims (Azulejo), pros formatos ficarem fiéis às
@@ -134,6 +143,10 @@ export function createVideoTilesEngine(outputCanvas) {
     // caleidoscópio: dobra a AMOSTRA do vídeo (não a grade de formas em si)
     // pelos mesmos 4 modos de simetria do Azulejo — ver remapSampleCoord.
     symmetry: 'none',
+    // opcional: só o formato "Tela cheia" passa um valor (calculado a
+    // partir da caixa medida na tela, ver index.js/computeFullBox) — os
+    // outros formatos deixam null e caem no OUTPUT_MAX_DIM fixo de sempre.
+    maxDim: null,
   };
 
   function rebuildCellShapesIfNeeded() {
@@ -167,7 +180,7 @@ export function createVideoTilesEngine(outputCanvas) {
     options.rows = rows;
     sampleCanvas.width = cols;
     sampleCanvas.height = rows;
-    const out = computeOutputSize(cols, rows, OUTPUT_MAX_DIM);
+    const out = computeOutputSize(cols, rows, clampOutputDim(options.maxDim));
     outputCanvas.width = out.width;
     outputCanvas.height = out.height;
     const gifOut = computeOutputSize(cols, rows, GIF_MAX_DIM);

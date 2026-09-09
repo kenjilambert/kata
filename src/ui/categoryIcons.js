@@ -65,4 +65,7 @@ export const CATEGORY_ICONS = {
   ),
   // círculo dentro de um quadrado arredondado — botão de gravar clássico.
   record: icon('<rect x="4" y="4" width="16" height="16" rx="8"/><circle cx="12" cy="12" r="4"/>'),
+  // barras de onda sonora (equalizador) — categoria "Áudio" da aba Som
+  // (sensibilidade/suavização/direção do scroll).
+  audio: icon('<path d="M4 12v2"/><path d="M8 8v10"/><path d="M12 4v18"/><path d="M16 8v10"/><path d="M20 12v2"/>'),
 };

@@ -26,6 +26,7 @@ import { createPressButton } from '../../ui/controls/pressButton.js';
 import { createSection } from '../../ui/controls/section.js';
 import { createFrameTilePicker } from '../../ui/controls/frameTilePicker.js';
 import { CATEGORY_ICONS } from '../../ui/categoryIcons.js';
+import { withViewTransition } from '../../ui/viewTransition.js';
 import { TOOLBAR_ICONS } from '../../ui/toolbarIcons.js';
 import { SHAPES } from './shapes.js';
 import {
@@ -395,7 +396,11 @@ export const gridIconsModule = {
       randomizeFn();
       refreshGridOverrideIfEditing();
       buildSidebar();
-      render();
+      // as formas novas entram com um cross-fade rápido (ver
+      // ui/viewTransition.js) em vez de trocar seco — escopado só ao
+      // PREVIEW (não a sidebar/página inteira, ver o comentão em
+      // ui/viewTransition.js sobre por que isso importa de verdade).
+      withViewTransition(render, { element: preview, name: 'shapes-preview' });
     }
 
     function randomizeAll() {
@@ -410,7 +415,7 @@ export const gridIconsModule = {
       state.seed = randomSeed();
       refreshGridOverrideIfEditing();
       buildSidebar();
-      render();
+      withViewTransition(render, { element: preview, name: 'shapes-preview' });
     }
 
     // só aplica o tema padrão na primeiríssima montagem — em remontagens
@@ -1320,7 +1325,10 @@ export const gridIconsModule = {
 
     function onFrameChange(value) {
       exportFrame = value;
-      updatePreviewFrame();
+      // troca de formato com cross-fade rápido (ver ui/viewTransition.js)
+      // em vez de o preview pular direto pro tamanho/proporção novos —
+      // escopado só à CAIXA do preview, não à página inteira.
+      withViewTransition(updatePreviewFrame, { element: previewWrap, name: 'format-preview' });
     }
 
     function renderVariations() {
@@ -1335,7 +1343,7 @@ export const gridIconsModule = {
           pushToHistory();
           state.seed = variationSeed;
           refreshGridOverrideIfEditing();
-          render();
+          withViewTransition(render, { element: preview, name: 'shapes-preview' });
         });
         variationsRow.appendChild(thumb);
       }

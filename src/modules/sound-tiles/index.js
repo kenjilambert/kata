@@ -10,29 +10,20 @@ import { createButton, flashExportSuccess } from '../../ui/controls/button.js';
 import { createSection } from '../../ui/controls/section.js';
 import { downloadBlob, EXPORT_FRAME_RATIOS } from '../../core/export.js';
 import { patternState } from '../../core/patternState.js';
-import { SYMMETRY_VALUES } from '../../core/symmetry.js';
 import { hexToHsl, hslToHex } from '../../core/color.js';
 import { loadThemes, applyTheme, themePreviewColorsFor } from '../../core/themes.js';
 import { SHAPES } from '../grid-icons/shapes.js';
 import { framedGridDims, buildCustomShapeDefs } from '../grid-icons/generator.js';
 import { CATEGORY_ICONS } from '../../ui/categoryIcons.js';
 import { withViewTransition } from '../../ui/viewTransition.js';
-import { createVideoTilesEngine } from './engine.js';
+import { createSoundTilesEngine } from './engine.js';
 
-// mesmas 4 opções do seletor "Formato" do Azulejo (ver frameTileOptions em
-// grid-icons/index.js) — reaproveitadas ao pé da letra (mesmo componente
-// visual, createFrameTilePicker) pra ficar fiel às proporções reais de
-// vídeo mais comuns (quadrado, retrato de feed, story/reels, paisagem).
-// Função (não uma lista fixa) pelo mesmo motivo de lá: os rótulos (label)
-// precisam ler t() de novo a cada troca de idioma, não travar no que
-// existia quando o módulo carregou.
+// mesmas 4 proporções do Espelho/Gradiente + "Tela cheia" (ver frameOptions
+// em gradient-tiles/index.js) — "full" não tem proporção fixa: o ratio aqui
+// só serve pro ícone do seletor (usa a proporção da própria janela), o
+// tamanho de verdade vem de computeFullBox() medindo o espaço na tela.
 function frameOptions() {
   return [
-    // "Tela cheia" não tem proporção fixa — é MEDIDA do espaço que sobra na
-    // tela (ver computeFullBox) e reage a redimensionar a janela/girar o
-    // celular. O ratio aqui só serve pro ícone do seletor (usa a proporção
-    // da própria janela pra prévia parecer com o resultado) — mesma ideia
-    // de gradient-tiles/index.js.
     {
       value: 'full',
       ratio: Math.max(0.4, Math.min(2.5, window.innerWidth / Math.max(1, window.innerHeight))),
@@ -46,32 +37,20 @@ function frameOptions() {
   ];
 }
 
-// estado só do modo Espelho — mesmo espírito do mosaicState (mosaic/index.js):
-// vive no escopo do módulo, sobrevive a trocar de aba e voltar. Formas,
-// cores, fundo e tema NÃO moram aqui — vêm direto do patternState
-// (compartilhado com o Azulejo, ver applyOptionsAndMaybePalette), pelo mesmo
-// motivo do Mosaico: editar aqui deve refletir lá e vice-versa, sem cópia
-// nenhuma pra dessincronizar.
-const videoState = {
+// estado só da aba Som — mesmo espírito de videoState/gradientState: formas
+// vêm do patternState compartilhado (igual Espelho/Gradiente), o resto é
+// próprio daqui.
+const soundState = {
   resolution: 32,
-  // formato/proporção real — "Tela cheia" por padrão (mesmo padrão do
-  // Gradiente) — dá mais impacto que o quadrado de sempre.
-  format: 'full',
+  format: 'square',
   ratio: EXPORT_FRAME_RATIOS.square,
   shapeScale: 1,
-  colorMode: 'palette',
+  colorMode: 'palette', // 'grayscale' | 'palette' | 'custom' | 'gradient' (sem 'source' — não existe "cor do áudio")
   inkColor: '#f5efe4',
-  // paleta própria do Espelho (modo "Paleta personalizada") — independente
-  // do patternState.colors do Azulejo, pra quem quiser uma paleta só pra
-  // esse efeito sem mexer na do Azulejo. Mesmo formato de patternState.colors
-  // ({color, weight}) só pra reaproveitar createColorSwatches sem adaptar nada.
   customPaletteColors: [
     { color: '#ea4530', weight: 1 },
     { color: '#3aa1d8', weight: 1 },
   ],
-  // paradas do modo "Gradiente", em ORDEM (a ordem é o que define o
-  // gradiente — ver interpolateGradient em engine.js). Padrão usa as
-  // próprias cores da marca (fundo escuro → vermelho → creme).
   gradientColors: [
     { color: '#141210', weight: 1 },
     { color: '#ea4530', weight: 1 },
@@ -80,18 +59,16 @@ const videoState = {
   invert: false,
   trail: 0,
   symmetry: 'none',
+  barsAxis: 'vertical',
+  sensitivity: 1.4,
+  smoothing: 0.75,
+  colorResponse: 0.6,
 };
 
 let cleanupLang = null;
 let engine = null;
 let recordTimerId = null;
 let gifTimerId = null;
-// destroy() do combo de Tema (createIconSelect) — ele registra 2 listeners em
-// `document` já na CRIAÇÃO, e buildSidebar() recria o combo a cada ajuste
-// (formato, modo de cor, tema, girar cores...). Sem chamar destroy antes de
-// recriar, cada ajuste deixava +2 listeners pendurados pra sempre, cada um
-// segurando uma subárvore de DOM já descartada — mesmo cuidado que o Mosaico
-// já tem com o select dele (ver cleanupGradientShapeSelect em mosaic/index.js).
 let cleanupThemeSelect = null;
 let cleanupResize = null;
 
@@ -102,34 +79,24 @@ function formatSeconds(totalMs) {
   return `${mm}:${ss}`;
 }
 
-export const videoTilesModule = {
-  id: 'video',
-  label: () => t('tabVideo'),
+export const soundTilesModule = {
+  id: 'sound',
+  label: () => t('tabSound'),
 
   async mount(container) {
-    // mesmo dicionário de temas do Azulejo (ver core/themes.js) — carregado
-    // de novo aqui (fetch é barato/cacheado) em vez de depender da aba
-    // Azulejo já ter carregado antes.
     const themes = await loadThemes();
     const themeKeys = Object.keys(themes);
-    // aba de categorias (ícone em cima, nome embaixo) só no mobile — mesmo
-    // mecanismo do Azulejo (ver .vt-controls/.gi-mobile-category-tabs no
-    // style.css), calculado 1x no mount (não muda se girar a tela depois,
-    // mesma decisão já tomada no Azulejo).
     const isMobileViewport = window.matchMedia('(max-width: 768px)').matches;
-    // qual categoria está aberta AGORA no mobile — precisa sobreviver a um
-    // buildSidebar() (rebuild completo a cada ajuste), senão mexer em
-    // qualquer coisa fechava o painel sozinho.
     let mobileActiveCategoryId = null;
 
     const root = document.createElement('div');
     root.className = 'mo-layout';
 
     const sidebar = document.createElement('div');
-    // .vt-controls (além de .mo-controls) só entra em ação dentro do
-    // media query mobile (ver style.css) — vira o "bottom sheet" fixo com
-    // aba de categorias; no desktop não muda nada (.mo-controls sozinho já
-    // dá conta).
+    // reaproveita EXATAMENTE o mesmo mecanismo de "bottom sheet + abas de
+    // categoria no mobile" do Espelho/Gradiente (ver .vt-controls no
+    // style.css) — os ids das abas usam prefixo st-cat-* (ver mais abaixo)
+    // pra não colidir com vt-cat-*/gt-cat-* dos outros dois.
     sidebar.className = 'mo-controls vt-controls';
 
     const stage = document.createElement('div');
@@ -137,7 +104,7 @@ export const videoTilesModule = {
 
     const resultTitle = document.createElement('div');
     resultTitle.className = 'mo-result-title';
-    resultTitle.textContent = t('videoResultTitle');
+    resultTitle.textContent = t('soundResultTitle');
 
     const previewWrap = document.createElement('div');
     previewWrap.className = 'vt-preview-wrap';
@@ -147,25 +114,22 @@ export const videoTilesModule = {
 
     const sourceHint = document.createElement('div');
     sourceHint.className = 'vt-source-hint';
-    sourceHint.textContent = t('videoSourceHint');
+    sourceHint.textContent = t('soundSourceHint');
     previewWrap.appendChild(sourceHint);
 
     const errorMsg = document.createElement('p');
     errorMsg.className = 'control-hint vt-error';
     errorMsg.hidden = true;
 
-    engine = createVideoTilesEngine(canvas);
-    engine.setOptions(videoState);
-    // o <video> nunca é exibido (o canvas é o que aparece) mas precisa
-    // existir no DOM mesmo assim — alguns navegadores pausam/desaceleram a
-    // decodificação de um <video> totalmente fora da árvore (nunca
-    // inserido), mesmo sem display:none.
-    engine.video.className = 'vt-source-video';
-    previewWrap.appendChild(engine.video);
+    engine = createSoundTilesEngine(canvas);
+    engine.setOptions(soundState);
 
     // espaço que sobra na tela pro preview no formato "Tela cheia" — MESMA
-    // conta de computeFullBox em gradient-tiles/sound-tiles/index.js. Ver o
-    // comentário lá pro porquê de zerar as dimensões ANTES de medir.
+    // conta de computeFullBox em gradient-tiles/index.js (largura útil do
+    // stage, altura daqui até onde os controles começam/o bottom sheet do
+    // mobile cobre). Ver o comentário lá pro porquê de zerar as dimensões
+    // ANTES de medir (evita o laço de realimentação de o preview esticar
+    // pra largura da janela toda).
     function computeFullBox() {
       previewWrap.style.width = '';
       previewWrap.style.height = '';
@@ -181,15 +145,11 @@ export const videoTilesModule = {
     }
 
     function applyOptionsAndMaybePalette() {
-      // shapesAllowed/colors vêm sempre ao vivo do patternState (a mesma
-      // "receita" que a aba Azulejo edita) — não uma cópia tirada uma vez só
-      // no mount, então mudar as formas/cores lá enquanto já se está na aba
-      // Vídeo reflete aqui na hora, do mesmo jeito que o Mosaico já faz.
-      const isFull = videoState.format === 'full';
+      const isFull = soundState.format === 'full';
       const box = isFull ? computeFullBox() : null;
       engine.setOptions({
-        ...videoState,
-        ratio: isFull ? box.w / box.h : videoState.ratio,
+        ...soundState,
+        ratio: isFull ? box.w / box.h : soundState.ratio,
         maxDim: isFull ? Math.max(box.w, box.h) * Math.min(2, window.devicePixelRatio || 1) : null,
         background: patternState.background || '#141210',
         paletteColors: patternState.colors,
@@ -197,29 +157,19 @@ export const videoTilesModule = {
       });
       const { cols, rows } = engine.getGridSize();
       if (isFull) {
-        // largura/altura em px explícitas — ocupar a caixa toda, não manter
-        // uma proporção fixa (aspect-ratio não serve aqui).
+        // largura/altura em px explícitas — a ideia é ocupar a caixa toda,
+        // não manter uma proporção fixa (aspect-ratio não serve aqui).
         previewWrap.style.aspectRatio = '';
         previewWrap.style.maxWidth = '';
         previewWrap.style.width = `${box.w}px`;
         previewWrap.style.height = `${box.h}px`;
-        return;
+      } else {
+        previewWrap.style.width = '';
+        previewWrap.style.height = '';
+        previewWrap.style.aspectRatio = `${cols} / ${rows}`;
+        const maxWidthFromHeight = window.innerHeight * 0.78 * (cols / rows);
+        previewWrap.style.maxWidth = `${Math.round(maxWidthFromHeight)}px`;
       }
-      previewWrap.style.width = '';
-      previewWrap.style.height = '';
-      // o preview segue o formato ESCOLHIDO (retrato/story/paisagem não são
-      // quadrados) — cols/rows já vêm arredondados pelo motor (framedGridDims),
-      // então o aspect-ratio do preview usa exatamente os mesmos números da
-      // grade, sem repetir a conta aqui.
-      previewWrap.style.aspectRatio = `${cols} / ${rows}`;
-      // limita a LARGURA (não só a altura) num formato bem vertical (story
-      // 9:16): só travar max-height deixaria width:100% esticando/cortando
-      // o canvas, já que aspect-ratio sozinho não "encolhe de volta" a
-      // largura quando a altura bate no teto. Calculando o max-width em px
-      // a partir da altura disponível (78% da viewport) as duas travas
-      // (largura do stage E altura da tela) valem ao mesmo tempo.
-      const maxWidthFromHeight = window.innerHeight * 0.78 * (cols / rows);
-      previewWrap.style.maxWidth = `${Math.round(maxWidthFromHeight)}px`;
     }
 
     function updateSourceHint() {
@@ -229,8 +179,8 @@ export const videoTilesModule = {
     let recordButton;
     let gifButton;
     let freezeButton;
-    let webcamButton;
-    let cameraSelectSlot;
+    let playButton;
+    let micButton;
 
     function stopRecordTimer() {
       if (recordTimerId) {
@@ -238,7 +188,6 @@ export const videoTilesModule = {
         recordTimerId = null;
       }
     }
-
     function stopGifTimer() {
       if (gifTimerId) {
         clearInterval(gifTimerId);
@@ -253,7 +202,7 @@ export const videoTilesModule = {
         recordButton.el.querySelector('.control-button-label').textContent = t('videoRecordButton');
         recordButton.el.classList.remove('vt-recording');
         if (blob) {
-          downloadBlob(blob, 'kata-video.webm');
+          downloadBlob(blob, 'kata-som.webm');
           flashExportSuccess(recordButton.el);
         }
         return;
@@ -269,23 +218,16 @@ export const videoTilesModule = {
       }, 500);
     }
 
-    // start e stop separados de propósito. Antes era uma função só e o timer
-    // chamava ELA quando o motor batia no teto de 8s — mas nesse instante
-    // isGifRecording() já era false, então a chamada caía no ramo de INICIAR:
-    // a gravação recomeçava sozinha, um setInterval novo sobrescrevia o
-    // anterior sem limpá-lo (acumulando um por ciclo de 8s, pra sempre) e o
-    // GIF nunca era baixado. Agora o timer só sabe PARAR.
     async function stopGif() {
       stopGifTimer();
       const blob = await engine.stopGifRecording();
       gifButton.el.querySelector('.control-button-label').textContent = t('videoGifButton');
       gifButton.el.classList.remove('vt-recording');
       if (blob) {
-        downloadBlob(blob, 'kata-video.gif');
+        downloadBlob(blob, 'kata-som.gif');
         flashExportSuccess(gifButton.el);
       }
     }
-
     function startGif() {
       if (!engine.hasSource()) return;
       engine.startGifRecording();
@@ -296,39 +238,12 @@ export const videoTilesModule = {
       stopGifTimer();
       gifTimerId = setInterval(() => {
         labelEl.textContent = `${t('videoStopGifButton')} · ${formatSeconds(Date.now() - startedAt)}`;
-        // o motor para de capturar sozinho no teto de duração (ver
-        // GIF_MAX_SECONDS em engine.js) — aqui só finaliza e baixa.
         if (!engine.isGifRecording()) stopGif();
       }, 500);
     }
-
     function handleGifClick() {
       if (engine.isGifRecording() || gifTimerId) stopGif();
       else startGif();
-    }
-
-    // enumerateDevices() só devolve os deviceId/label de verdade depois de
-    // uma permissão de câmera já concedida — por isso só monta esse seletor
-    // depois de ligar a webcam ao menos uma vez, nunca antes.
-    async function refreshCameraSelect() {
-      cameraSelectSlot.innerHTML = '';
-      if (!engine.isWebcamActive()) return;
-      const cameras = await engine.listCameras();
-      if (cameras.length < 2) return;
-      const select = createSelect({
-        label: t('videoCameraLabel'),
-        options: cameras.map((cam, i) => ({ value: cam.deviceId, label: cam.label || `${t('videoCameraLabel')} ${i + 1}` })),
-        value: engine.getActiveDeviceId() || cameras[0].deviceId,
-        onChange: async (deviceId) => {
-          try {
-            await engine.enableWebcam(deviceId);
-          } catch (err) {
-            errorMsg.textContent = `${t('videoWebcamError')} (${err?.name || err?.message || err})`;
-            errorMsg.hidden = false;
-          }
-        },
-      });
-      cameraSelectSlot.appendChild(select.el);
     }
 
     function buildSidebar() {
@@ -340,81 +255,71 @@ export const videoTilesModule = {
 
       const uploadInput = document.createElement('input');
       uploadInput.type = 'file';
-      uploadInput.accept = 'video/*';
+      uploadInput.accept = 'audio/*';
       uploadInput.className = 'mo-file-input vt-file-input';
-      uploadInput.addEventListener('change', () => {
+      uploadInput.addEventListener('change', async () => {
         const file = uploadInput.files?.[0];
         if (!file) return;
         errorMsg.hidden = true;
-        engine.stopWebcam();
-        webcamButton.el.querySelector('.control-button-label').textContent = t('videoWebcamButton');
-        engine.loadFile(file);
+        micButton.el.querySelector('.control-button-label').textContent = t('soundMicButton');
+        await engine.loadFile(file);
         updateSourceHint();
-        refreshCameraSelect();
+        playButton.el.hidden = false;
+        playButton.el.querySelector('.control-button-label').textContent = t('soundPauseButton');
       });
       const uploadButton = createButton({
-        label: t('videoUploadButton'),
+        label: t('soundUploadButton'),
         variant: 'accent2',
         onClick: () => uploadInput.click(),
       });
 
-      webcamButton = createButton({
-        label: t('videoWebcamButton'),
+      micButton = createButton({
+        label: t('soundMicButton'),
         variant: 'primary',
         onClick: async () => {
-          const labelEl = webcamButton.el.querySelector('.control-button-label');
-          if (engine.isWebcamActive()) {
-            engine.stopWebcam();
-            labelEl.textContent = t('videoWebcamButton');
+          const labelEl = micButton.el.querySelector('.control-button-label');
+          if (engine.isMicActive()) {
+            engine.stopMic();
+            labelEl.textContent = t('soundMicButton');
             updateSourceHint();
-            refreshCameraSelect();
             return;
           }
           try {
             errorMsg.hidden = true;
-            await engine.enableWebcam();
-            labelEl.textContent = t('videoWebcamStopButton');
+            await engine.enableMic();
+            labelEl.textContent = t('soundMicStopButton');
+            playButton.el.hidden = true;
             updateSourceHint();
-            refreshCameraSelect();
           } catch (err) {
-            // mostra o motivo REAL (err.name — NotAllowedError, NotFoundError,
-            // NotReadableError, SecurityError...) junto da mensagem, não só um
-            // "não foi possível" genérico — é o que ajuda a diferenciar
-            // "permissão negada" de "nenhuma câmera encontrada" de "outro app
-            // já está usando a câmera", que pedem soluções bem diferentes
-            // (alguns navegadores, como o Brave, bloqueiam por padrão via
-            // Shields, mesmo depois de aceitar o prompt do site).
-            errorMsg.textContent = `${t('videoWebcamError')} (${err?.name || err?.message || err})`;
+            errorMsg.textContent = `${t('soundMicError')} (${err?.name || err?.message || err})`;
             errorMsg.hidden = false;
           }
         },
       });
 
+      playButton = createButton({
+        label: t('soundPauseButton'),
+        onClick: () => {
+          engine.toggleFilePlayback();
+          playButton.el.querySelector('.control-button-label').textContent = engine.isFilePlaying() ? t('soundPauseButton') : t('soundPlayButton');
+        },
+      });
+      playButton.el.hidden = !engine.hasSource() || engine.isMicActive();
+
       const sourceRow = document.createElement('div');
       sourceRow.className = 'vt-source-row';
       sourceRow.appendChild(uploadButton.el);
-      sourceRow.appendChild(webcamButton.el);
-      cameraSelectSlot = document.createElement('div');
-      sidebar.appendChild(createSection(t('videoSourceSection'), [sourceRow, cameraSelectSlot, uploadInput, errorMsg], { id: 'source' }));
-      // reconstrói o seletor de câmeras a cada rebuild da sidebar também
-      // (troca de idioma, etc.) — sem isso ele sumiria (a sidebar inteira é
-      // reconstruída do zero) mesmo com a webcam continuando ativa por trás.
-      refreshCameraSelect();
+      sourceRow.appendChild(micButton.el);
+      sourceRow.appendChild(playButton.el);
+      sidebar.appendChild(createSection(t('soundSourceSection'), [sourceRow, uploadInput, errorMsg], { id: 'source' }));
 
       const framePicker = createFrameTilePicker({
         options: frameOptions(),
-        value: videoState.format,
+        value: soundState.format,
         onChange: (value) => {
-          videoState.format = value;
-          videoState.ratio = EXPORT_FRAME_RATIOS[value];
-          // reconstrói a sidebar inteira (não só aplica as opções) — o
-          // rótulo do slider de Resolução mostra "colsxrows" calculado a
-          // partir do ratio (ver formatValue mais abaixo); sem recriar o
-          // slider, ele ficava mostrando o par antigo até a próxima vez que
-          // a pessoa arrastasse o próprio slider.
+          soundState.format = value;
+          soundState.ratio = EXPORT_FRAME_RATIOS[value];
           buildSidebar();
-          // preview morfa pro tamanho/proporção novos com um cross-fade
-          // rápido (ver ui/viewTransition.js) em vez de pular direto.
           withViewTransition(applyOptionsAndMaybePalette, { element: previewWrap, name: 'format-preview' });
         },
       });
@@ -426,17 +331,13 @@ export const videoTilesModule = {
           min: 8,
           max: 96,
           step: 1,
-          value: videoState.resolution,
-          // calcula cols×rows na hora (mesma conta do motor, framedGridDims)
-          // em vez de ler o que o motor já aplicou — assim o número mostrado
-          // acompanha o dedo arrastando o slider sem ficar 1 passo atrasado
-          // (onChange só dispara depois que o rótulo já foi atualizado).
+          value: soundState.resolution,
           formatValue: (v) => {
-            const { cols, rows } = framedGridDims(v, videoState.ratio);
+            const { cols, rows } = framedGridDims(v, soundState.ratio);
             return `${cols}×${rows}`;
           },
           onChange: (value) => {
-            videoState.resolution = value;
+            soundState.resolution = value;
             applyOptionsAndMaybePalette();
           },
         }).el,
@@ -445,31 +346,24 @@ export const videoTilesModule = {
           min: 20,
           max: 140,
           step: 5,
-          value: Math.round(videoState.shapeScale * 100),
+          value: Math.round(soundState.shapeScale * 100),
           formatValue: (v) => `${v}%`,
           onChange: (value) => {
-            videoState.shapeScale = value / 100;
+            soundState.shapeScale = value / 100;
             applyOptionsAndMaybePalette();
           },
         }).el,
         createToggleSwitch({
           label: t('invertColorsLabel'),
-          value: videoState.invert,
+          value: soundState.invert,
           onChange: (checked) => {
-            videoState.invert = checked;
+            soundState.invert = checked;
             applyOptionsAndMaybePalette();
           },
         }).el,
       ];
       sidebar.appendChild(createSection(t('videoGridSection'), gridElements, { id: 'grid' }));
 
-      // EXATAMENTE o mesmo seletor de formas do Azulejo (mesmo componente,
-      // mesmo catálogo inteiro — incluindo ícones personalizados enviados
-      // por lá) — não um recorte só das ativas. `value` começa com as que
-      // já estão ligadas no Azulejo (patternState.shapesAllowed), mas dali
-      // pra frente é um multi-seleção de verdade: liga/desliga aqui muda o
-      // patternState direto, então volta refletido no Azulejo também (a
-      // mesma "receita" compartilhada, igual cores/tema abaixo).
       const shapesGrid = createShapeToggleGrid({
         label: t('shapesSection'),
         shapes: { ...SHAPES, ...buildCustomShapeDefs(patternState.customShapes) },
@@ -481,38 +375,88 @@ export const videoTilesModule = {
       });
       sidebar.appendChild(createSection(t('shapesSection'), [shapesGrid.el], { id: 'shapes' }));
 
-      const effectsElements = [
+      // controles próprios do áudio — sensibilidade (o microfone quase
+      // sempre chega baixo), resposta das cores (quão cedo a cor troca —
+      // ver comentário grandão em engine.js sobre colorResponse), suavização
+      // (repassada direto pro AnalyserNode.smoothingTimeConstant — sem isso
+      // o padrão "treme" quadro a quadro) e o eixo das barras.
+      const audioElements = [
+        createSlider({
+          label: t('soundSensitivityLabel'),
+          min: 50,
+          max: 300,
+          step: 5,
+          value: Math.round(soundState.sensitivity * 100),
+          formatValue: (v) => `${v}%`,
+          onChange: (value) => {
+            soundState.sensitivity = value / 100;
+            applyOptionsAndMaybePalette();
+          },
+        }).el,
+        createSlider({
+          label: t('soundColorResponseLabel'),
+          min: 20,
+          max: 150,
+          step: 5,
+          // quanto do gradiente base→ponta a barra percorre — MENOR = fica
+          // mais perto da cor da base o tempo todo (pouca variação),
+          // MAIOR = a ponta da barra chega mais longe no gradiente, mesmo
+          // numa barra curta (mais variação, mais cedo).
+          value: Math.round(soundState.colorResponse * 100),
+          formatValue: (v) => `${v}%`,
+          onChange: (value) => {
+            soundState.colorResponse = value / 100;
+            applyOptionsAndMaybePalette();
+          },
+        }).el,
+        createSlider({
+          label: t('soundSmoothingLabel'),
+          min: 0,
+          max: 90,
+          step: 5,
+          value: Math.round(soundState.smoothing * 100),
+          formatValue: (v) => `${v}%`,
+          onChange: (value) => {
+            soundState.smoothing = value / 100;
+            applyOptionsAndMaybePalette();
+          },
+        }).el,
+        createSelect({
+          label: t('soundScrollAxisLabel'),
+          options: [
+            { value: 'vertical', label: t('soundScrollAxisVertical') },
+            { value: 'horizontal', label: t('soundScrollAxisHorizontal') },
+          ],
+          value: soundState.barsAxis,
+          onChange: (value) => {
+            soundState.barsAxis = value;
+            applyOptionsAndMaybePalette();
+          },
+        }).el,
         createSlider({
           label: t('videoTrailLabel'),
           min: 0,
           max: 95,
           step: 5,
-          value: Math.round(videoState.trail * 100),
+          value: Math.round(soundState.trail * 100),
           formatValue: (v) => `${v}%`,
           onChange: (value) => {
-            videoState.trail = value / 100;
+            soundState.trail = value / 100;
             applyOptionsAndMaybePalette();
           },
         }).el,
         createSelect({
           label: t('symmetryTypeLabel'),
-          options: SYMMETRY_VALUES.map((value) => ({ value, label: t(`symmetry_${value}`) })),
-          value: videoState.symmetry,
+          options: ['none', 'mirror-h', 'mirror-full'].map((value) => ({ value, label: t(`symmetry_${value}`) })),
+          value: soundState.symmetry,
           onChange: (value) => {
-            videoState.symmetry = value;
+            soundState.symmetry = value;
             applyOptionsAndMaybePalette();
           },
         }).el,
       ];
-      sidebar.appendChild(createSection(t('videoEffectsSection'), effectsElements, { id: 'effects' }));
+      sidebar.appendChild(createSection(t('soundAudioSection'), audioElements, { id: 'audio' }));
 
-      // "Tema" — mesmo dicionário/lógica do Azulejo (core/themes.js):
-      // aplica direto no patternState compartilhado, então troca de tema
-      // aqui também aparece se voltar pro Azulejo (e vice-versa). Prévia
-      // com bolinhas de cor, igual ao combo de lá — só o mecanismo do
-      // dropdown em si é o genérico (createIconSelect) em vez do combo
-      // com posicionamento próprio do Azulejo, pra não duplicar aquele
-      // tanto de código só pra isso.
       function renderThemeDots(key) {
         const wrap = document.createElement('span');
         wrap.className = 'theme-combo-preview';
@@ -548,20 +492,19 @@ export const videoTilesModule = {
           label: t('videoColorModeLabel'),
           options: [
             { value: 'grayscale', label: t('videoColorModeGrayscale') },
-            { value: 'source', label: t('videoColorModeSource') },
             { value: 'palette', label: t('videoColorModePalette') },
             { value: 'custom', label: t('videoColorModeCustom') },
             { value: 'gradient', label: t('videoColorModeGradient') },
           ],
-          value: videoState.colorMode,
+          value: soundState.colorMode,
           onChange: (value) => {
-            videoState.colorMode = value;
+            soundState.colorMode = value;
             buildSidebar();
             applyOptionsAndMaybePalette();
           },
         }).el,
       ];
-      if (videoState.colorMode === 'grayscale') {
+      if (soundState.colorMode === 'grayscale') {
         const inkRow = document.createElement('div');
         inkRow.className = 'control control-stroke-color';
         const inkLabel = document.createElement('span');
@@ -570,19 +513,16 @@ export const videoTilesModule = {
         const inkInput = document.createElement('input');
         inkInput.type = 'color';
         inkInput.className = 'stroke-color-input';
-        inkInput.value = videoState.inkColor;
+        inkInput.value = soundState.inkColor;
         inkInput.addEventListener('input', () => {
-          videoState.inkColor = inkInput.value;
+          soundState.inkColor = inkInput.value;
           applyOptionsAndMaybePalette();
         });
         inkRow.appendChild(inkLabel);
         inkRow.appendChild(inkInput);
         colorElements.push(inkRow);
       }
-      if (videoState.colorMode === 'palette') {
-        // MESMOS controles de cor do Azulejo (createColorSwatches + girar
-        // matiz), editando o patternState.colors compartilhado direto —
-        // não uma paleta separada só do Espelho.
+      if (soundState.colorMode === 'palette') {
         const colorSwatches = createColorSwatches({
           label: t('paletteLabel'),
           colors: patternState.colors,
@@ -609,31 +549,23 @@ export const videoTilesModule = {
         });
         colorElements.push(rotateColorsButton.el);
       }
-      if (videoState.colorMode === 'custom') {
-        // paleta própria do Espelho — mesmo controle (createColorSwatches),
-        // mas editando videoState.customPaletteColors, não o patternState
-        // compartilhado do Azulejo.
+      if (soundState.colorMode === 'custom') {
         const customSwatches = createColorSwatches({
           label: t('videoColorModeCustom'),
-          colors: videoState.customPaletteColors,
+          colors: soundState.customPaletteColors,
           onChange: (colors) => {
-            videoState.customPaletteColors = colors;
+            soundState.customPaletteColors = colors;
             applyOptionsAndMaybePalette();
           },
         });
         colorElements.push(customSwatches.el);
       }
-      if (videoState.colorMode === 'gradient') {
-        // mesmo controle de sempre, mas aqui a ORDEM das cores É o gradiente
-        // (não pesos de sorteio) — célula escura puxa pra primeira cor,
-        // clara puxa pra última, o meio interpola (ver interpolateGradient
-        // em engine.js). "Tamanho das formas" para de reagir à luminância
-        // nesse modo — quem reage é só a cor.
+      if (soundState.colorMode === 'gradient') {
         const gradientSwatches = createColorSwatches({
           label: t('videoGradientLabel'),
-          colors: videoState.gradientColors,
+          colors: soundState.gradientColors,
           onChange: (colors) => {
-            videoState.gradientColors = colors;
+            soundState.gradientColors = colors;
             applyOptionsAndMaybePalette();
           },
         });
@@ -649,8 +581,6 @@ export const videoTilesModule = {
       bgInput.className = 'background-color-input';
       bgInput.value = patternState.background || '#141210';
       bgInput.addEventListener('input', () => {
-        // mesmo fundo do Azulejo (patternState.background) — não um separado
-        // só do Espelho.
         patternState.background = bgInput.value;
         patternState.themeKey = 'custom';
         applyOptionsAndMaybePalette();
@@ -682,7 +612,7 @@ export const videoTilesModule = {
         label: t('videoDownloadFrameButton'),
         onClick: () => {
           canvas.toBlob((blob) => {
-            if (blob) downloadBlob(blob, 'kata-video-quadro.png');
+            if (blob) downloadBlob(blob, 'kata-som-quadro.png');
             flashExportSuccess(frameButton.el);
           }, 'image/png');
         },
@@ -695,12 +625,8 @@ export const videoTilesModule = {
       actions.appendChild(frameButton.el);
       sidebar.appendChild(createSection(t('videoRecordSection'), [actions], { id: 'record' }));
 
-      // --- aba de categorias (só no mobile) --- mesmo mecanismo de
-      // :has() + radio escondido do Azulejo (ver comentário grandão em
-      // grid-icons/index.js) — ícone por seção (ui/categoryIcons.js),
-      // reaproveitando as MESMAS classes CSS (.gi-mobile-category-tabs*),
-      // só que a visibilidade é controlada por .vt-controls (não
-      // .gi-controls), escopado só pro Espelho.
+      // aba de categorias no mobile — mesmo mecanismo do Espelho/Gradiente,
+      // ids st-cat-* (ver bloco :has() correspondente em style.css).
       if (isMobileViewport) {
         const categorySections = Array.from(sidebar.querySelectorAll('.control-section[data-section-id]'));
         if (categorySections.length) {
@@ -709,11 +635,11 @@ export const videoTilesModule = {
           categorySections.forEach((section) => {
             const sectionId = section.dataset.sectionId;
             const title = section.querySelector('.control-section-title')?.textContent ?? sectionId;
-            const inputId = `vt-cat-${sectionId}`;
+            const inputId = `st-cat-${sectionId}`;
 
             const input = document.createElement('input');
             input.type = 'radio';
-            input.name = 'vt-category-tab';
+            input.name = 'st-category-tab';
             input.id = inputId;
             input.className = 'gi-mobile-category-tabs-input';
             input.checked = sectionId === mobileActiveCategoryId;
@@ -726,9 +652,6 @@ export const videoTilesModule = {
               (iconMarkup ? `<span class="gi-mobile-category-tabs-icon">${iconMarkup}</span>` : '') +
               `<span class="gi-mobile-category-tabs-text">${title}</span>`;
 
-            // tocar de novo no ícone já ativo FECHA o painel (mesmo truque
-            // do Azulejo — radio nativo não desmarca sozinho ao clicar de
-            // novo nele).
             tabLabel.addEventListener('click', (e) => {
               if (input.checked) {
                 e.preventDefault();
@@ -747,7 +670,7 @@ export const videoTilesModule = {
 
           categoryTabs.addEventListener('change', () => {
             const checkedInput = categoryTabs.querySelector('.gi-mobile-category-tabs-input:checked');
-            mobileActiveCategoryId = checkedInput ? checkedInput.id.replace('vt-cat-', '') : null;
+            mobileActiveCategoryId = checkedInput ? checkedInput.id.replace('st-cat-', '') : null;
             if (!checkedInput) return;
             sidebar.querySelector(`[data-section-id="${mobileActiveCategoryId}"]`)?.scrollTo?.({ top: 0, behavior: 'smooth' });
           });
@@ -766,16 +689,20 @@ export const videoTilesModule = {
 
     // SÓ depois de inserir na página: o formato "Tela cheia" mede o espaço
     // disponível de verdade (computeFullBox) — antes disso, com o elemento
-    // ainda fora do documento, toda medida é 0.
+    // ainda fora do documento, toda medida é 0 (ver mesmo comentário em
+    // gradient-tiles/index.js).
     applyOptionsAndMaybePalette();
 
     engine.start();
 
     // "Tela cheia" precisa remedir quando a janela muda de tamanho (ou o
-    // celular gira) — mesma lógica do Gradiente/Som.
+    // celular gira) — mesma lógica do Gradiente: passa por rAF pra não
+    // recalcular a grade repetidas vezes durante o arraste do canto da
+    // janela, e é removido no unmount (listener de window sobrevive a
+    // trocar de aba sozinho, senão).
     let resizeRaf = null;
     const onResize = () => {
-      if (videoState.format !== 'full') return;
+      if (soundState.format !== 'full') return;
       if (resizeRaf != null) return;
       resizeRaf = requestAnimationFrame(() => {
         resizeRaf = null;
@@ -790,8 +717,8 @@ export const videoTilesModule = {
     };
 
     cleanupLang = onLangChange(() => {
-      resultTitle.textContent = t('videoResultTitle');
-      sourceHint.textContent = t('videoSourceHint');
+      resultTitle.textContent = t('soundResultTitle');
+      sourceHint.textContent = t('soundSourceHint');
       buildSidebar();
       updateSourceHint();
     });
@@ -825,7 +752,6 @@ function stopRecordTimerCleanup() {
     recordTimerId = null;
   }
 }
-
 function stopGifTimerCleanup() {
   if (gifTimerId) {
     clearInterval(gifTimerId);

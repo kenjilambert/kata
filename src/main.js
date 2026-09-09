@@ -3,6 +3,7 @@ import { gridIconsModule } from './modules/grid-icons/index.js';
 import { mosaicModule } from './modules/mosaic/index.js';
 import { videoTilesModule } from './modules/video-tiles/index.js';
 import { gradientTilesModule } from './modules/gradient-tiles/index.js';
+import { soundTilesModule } from './modules/sound-tiles/index.js';
 import { initCustomCursor } from './ui/customCursor.js';
 import { renderDynamicLogo } from './ui/dynamicLogo.js';
 import { getLang, setLang, onLangChange, AVAILABLE_LANGS } from './core/i18n.js';
@@ -74,4 +75,4 @@ onLangChange(renderLangSwitcher);
 
 const app = document.getElementById('app');
 const moduleTabsSlot = document.getElementById('module-tabs-slot');
-createModuleSwitcher(app, [gridIconsModule, mosaicModule, videoTilesModule, gradientTilesModule], moduleTabsSlot, { onActivate: updateLogoAndFavicon });
+createModuleSwitcher(app, [gridIconsModule, mosaicModule, gradientTilesModule, soundTilesModule, videoTilesModule], moduleTabsSlot, { onActivate: updateLogoAndFavicon });

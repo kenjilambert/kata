@@ -57,6 +57,92 @@
   color-scheme: dark;
 }
 
+/* ==========================================================================
+   View Transitions (ver ui/viewTransition.js) — troca de formato E o
+   padrão sendo sorteado de novo (Azulejo) passam por um cross-fade suave
+   em vez de trocar de estado seco. O navegador já faz isso sozinho (tira
+   uma "foto" de antes/depois e faz a transição); aqui só afinamos a
+   duração/curva pro "bem rapidinho, mas smooth" pedido — o padrão do
+   próprio navegador (~250ms, ease linear) fica genérico/lento demais.
+   Sem overshoot (--ease-expressive tem um "bounce" que fica estranho
+   redimensionando/trocando pixels — cabe bem em botão, não aqui). */
+/* `*` (não só "root") — cada withViewTransition escopado (formato,
+   formas surgindo, indicador de aba...) tem um NOME próprio (ver
+   ui/viewTransition.js), então cai num grupo diferente de "root"; sem o
+   `*` aqui, cada um deles usaria a duração/curva GENÉRICA do navegador
+   (~250ms) em vez dessa. */
+::view-transition-group(*) {
+  animation-duration: 0.18s;
+}
+::view-transition-old(*),
+::view-transition-new(*) {
+  animation-duration: 0.18s;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
+/* a pílula ativa do menu (tab-indicator) NÃO usa View Transition — ver
+   .tab-active-indicator em style.css e o comentário em module-switcher.js
+   (o motivo: VT renderiza fora do recorte do trilho, "saindo" dele durante
+   o movimento). O morph dela é uma transition CSS comum ali mesmo. */
+
+/* troca de FORMATO (Formato: 1:1/4:5/Tela cheia...) — em vez do cross-fade
+   seco padrão, a versão antiga do preview desfoca e encolhe levemente saindo,
+   a nova entra desfocada e cresce até nítida: o "smooth, com um blur" que foi
+   pedido, só nessa caixa (escopada via view-transition-name, não na página
+   toda — ver ui/viewTransition.js). */
+@keyframes format-preview-out {
+  to {
+    opacity: 0;
+    filter: blur(10px);
+    transform: scale(0.97);
+  }
+}
+@keyframes format-preview-in {
+  from {
+    opacity: 0;
+    filter: blur(10px);
+    transform: scale(1.03);
+  }
+}
+::view-transition-old(format-preview) {
+  animation: 0.32s cubic-bezier(0.22, 1, 0.36, 1) both format-preview-out;
+}
+::view-transition-new(format-preview) {
+  animation: 0.32s cubic-bezier(0.22, 1, 0.36, 1) both format-preview-in;
+}
+::view-transition-group(format-preview) {
+  animation-duration: 0.32s;
+}
+
+/* shapes surgindo no Azulejo (regeneração aleatória) — mesma ideia do
+   blur acima, só que mais rápida (é um "piscar" de padrão, não uma troca de
+   caixa) e sem crescer/encolher, só desfoca/foca. */
+@keyframes shapes-preview-out {
+  to {
+    opacity: 0;
+    filter: blur(6px);
+  }
+}
+@keyframes shapes-preview-in {
+  from {
+    opacity: 0;
+    filter: blur(6px);
+  }
+}
+::view-transition-old(shapes-preview) {
+  animation: 0.2s ease-out both shapes-preview-out;
+}
+::view-transition-new(shapes-preview) {
+  animation: 0.2s ease-out both shapes-preview-in;
+}
+
 /* entrada de painel/galeria ao trocar de aba (categoria de ajuste, ou
    Resultado/Variações/Histórico) — "sobe" de leve em vez de só aparecer
    estático, dá a mesma resposta de um bottom sheet abrindo. */
@@ -73,6 +159,17 @@
 
 * {
   box-sizing: border-box;
+}
+
+/* trava geral: sem isso, qualquer elemento com `display` próprio definido
+   por classe (ex.: .control-button define display:inline-flex) IGNORA o
+   atributo `hidden` puro — mesma especificidade, e a regra do autor vence
+   a da UA. Só apareceu com o botão Tocar/Pausar da aba Som (o primeiro
+   caso do projeto a esconder um .control-button via `hidden` puro, sem
+   também tirar do fluxo via JS) — melhor travar pra sempre em vez de só
+   corrigir aquele um caso. */
+[hidden] {
+  display: none !important;
 }
 
 /* o app depende de vários painéis com scroll interno próprio (barra
@@ -280,9 +377,14 @@ body {
 }
 
 .module-tabs {
-  /* a "pílula" de fundo da nav — os botões ficam soltos dentro dela, cada
-     um vira sua PRÓPRIA pílula por cima ao ativar/hover (ver
-     .pill-hover-circle abaixo), igual ao PillNav do React Bits. */
+  /* a "pílula" de fundo da nav — os botões ficam soltos dentro dela; o
+     HOVER usa uma bolha própria por botão (ver .pill-hover-circle
+     abaixo, PillNav do React Bits), mas a aba ATIVA usa uma pílula ÚNICA
+     compartilhada (.tab-active-indicator) que desliza/recolore de um
+     botão pro outro em vez de sumir aqui e crescer ali — ver
+     moveActiveIndicator em module-switcher.js. position:relative aqui é
+     o que ancora o posicionamento absoluto dela. */
+  position: relative;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -292,6 +394,23 @@ body {
   padding: 3px;
   background: var(--panel);
   border-radius: var(--radius-pill);
+}
+
+.tab-active-indicator {
+  position: absolute;
+  border-radius: var(--radius-pill);
+  z-index: 0;
+  pointer-events: none;
+  /* transition CSS comum, NÃO View Transition — a pílula tentou usar VT
+     pra morfar antes, mas o navegador renderiza o grupo de VT numa camada
+     própria por CIMA de tudo (top layer), sem respeitar o overflow/formato
+     do trilho (.module-tabs) por baixo — dava a impressão de "sair do
+     trilho e voltar" no meio do movimento. Uma transition normal fica
+     presa no layout de verdade (filha real de .module-tabs), então nunca
+     escapa da pílula-mãe. */
+  transition: left 0.22s cubic-bezier(0.32, 0.72, 0.35, 1),
+    top 0.22s cubic-bezier(0.32, 0.72, 0.35, 1), width 0.22s cubic-bezier(0.32, 0.72, 0.35, 1),
+    height 0.22s cubic-bezier(0.32, 0.72, 0.35, 1), background-color 0.22s ease;
 }
 
 .module-tabs button,
@@ -329,9 +448,9 @@ body {
   width: 220%;
   aspect-ratio: 1;
   border-radius: 50%;
-  /* vermelho por padrão (Azulejo) — Mosaico troca pra azul, ver
-     [data-id='mosaic'] abaixo, mesmo revezamento de cor que o resto do
-     app já usa pra diferenciar os 2 módulos. */
+  /* revezando vermelho/azul por posição — MESMA conta de colorForIndex
+     em module-switcher.js, pro preview de hover já mostrar a cor que a
+     aba vai ganhar se virar a ativa. */
   background: var(--accent);
   transform: translateX(-50%) scale(0);
   transform-origin: center bottom;
@@ -340,7 +459,7 @@ body {
   pointer-events: none;
 }
 
-.module-tabs button[data-id='mosaic'] .pill-hover-circle {
+.module-tabs button:nth-of-type(even) .pill-hover-circle {
   background: var(--accent-2);
 }
 
@@ -350,8 +469,9 @@ body {
   transition: color 0.2s ease;
 }
 
-.module-tabs button:hover .pill-hover-circle,
-.module-tabs button.active .pill-hover-circle {
+/* só HOVER agora — a aba ATIVA usa a pílula única (.tab-active-indicator,
+   ver acima), não mais essa bolha própria crescendo/sumindo por botão. */
+.module-tabs button:hover .pill-hover-circle {
   transform: translateX(-50%) scale(1);
 }
 
@@ -383,6 +503,42 @@ body {
   padding: 28px;
   display: flex;
   flex-direction: column;
+  /* NENHUM view-transition-name fixo aqui — ele é setado/removido em JS,
+     só durante a troca de aba (ver module-switcher.js/withViewTransition).
+     Deixar fixo promove esse elemento (quase a página inteira) pra uma
+     camada de composição própria O TEMPO TODO, não só durante a
+     transição — foi o que deixou até o cursor lento. */
+}
+
+/* troca de aba — desliza fundido, ao estilo do segmented control do iOS
+   (Safari trocando de aba anônima/normal): o conteúdo velho sai deslizando
+   pro lado OPOSTO de onde a aba nova mora na barra, o novo entra vindo
+   de lá — não é só um cross-fade parado. Direção decidida em JS (ver
+   dataset.moduleTransitionDir em module-switcher.js) porque só ali se
+   sabe se a aba clicada fica à direita ou esquerda da atual. */
+@keyframes module-slide-out-left { to { transform: translateX(-32px); opacity: 0; } }
+@keyframes module-slide-in-right { from { transform: translateX(32px); opacity: 0; } }
+@keyframes module-slide-out-right { to { transform: translateX(32px); opacity: 0; } }
+@keyframes module-slide-in-left { from { transform: translateX(-32px); opacity: 0; } }
+
+:root[data-module-transition-dir='forward']::view-transition-old(module-content) {
+  animation: 0.22s cubic-bezier(0.22, 1, 0.36, 1) both module-slide-out-left;
+}
+:root[data-module-transition-dir='forward']::view-transition-new(module-content) {
+  animation: 0.22s cubic-bezier(0.22, 1, 0.36, 1) both module-slide-in-right;
+}
+:root[data-module-transition-dir='backward']::view-transition-old(module-content) {
+  animation: 0.22s cubic-bezier(0.22, 1, 0.36, 1) both module-slide-out-right;
+}
+:root[data-module-transition-dir='backward']::view-transition-new(module-content) {
+  animation: 0.22s cubic-bezier(0.22, 1, 0.36, 1) both module-slide-in-left;
+}
+/* o grupo em si (não old/new individualmente) controla quanto tempo a
+   troca de LAYOUT (largura/altura mudando entre módulos bem diferentes)
+   leva pra se acomodar — sem isso ficava mais rápido que o slide acima e
+   "cortava" o efeito no meio. */
+::view-transition-group(module-content) {
+  animation-duration: 0.22s;
 }
 
 /* grid-icons module */
@@ -3049,6 +3205,23 @@ body {
     min-height: 0;
     overflow-y: auto;
   }
+
+  /* mesmo mecanismo acima, aba Som (.vt-controls reaproveitada — ver
+     .mo-controls.vt-controls em sound-tiles/index.js —, ids st-cat-* pra
+     não colidir com vt-cat-*/gt-cat-* dos outros dois). */
+  .vt-controls:has(#st-cat-source:checked) [data-section-id='source'],
+  .vt-controls:has(#st-cat-format:checked) [data-section-id='format'],
+  .vt-controls:has(#st-cat-grid:checked) [data-section-id='grid'],
+  .vt-controls:has(#st-cat-shapes:checked) [data-section-id='shapes'],
+  .vt-controls:has(#st-cat-audio:checked) [data-section-id='audio'],
+  .vt-controls:has(#st-cat-theme:checked) [data-section-id='theme'],
+  .vt-controls:has(#st-cat-colors:checked) [data-section-id='colors'],
+  .vt-controls:has(#st-cat-record:checked) [data-section-id='record'] {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
 }
 
 /* ==========================================================================
@@ -3096,7 +3269,13 @@ body {
   z-index: 10000;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.15s ease, transform 0.05s linear;
+  /* SÓ a opacidade (entrar/sumir) tem transição — a posição (transform) é
+     instantânea, sem easing nenhum. Um `transition: transform` aqui fazia o
+     cursor "correr atrás" do mouse de verdade a cada movimento (por menor
+     que fosse o tempo, 0.05s), em vez de saltar direto pra posição nova —
+     é isso que dava a sensação de atraso/arrasto que o cursor nativo do
+     sistema nunca tem (ele não anima posição, só aparece já no lugar). */
+  transition: opacity 0.15s ease;
   will-change: transform;
 }
 

@@ -10,6 +10,7 @@ import { patternState } from '../../core/patternState.js';
 import { SHAPES } from '../grid-icons/shapes.js';
 import { framedGridDims, buildCustomShapeDefs } from '../grid-icons/generator.js';
 import { CATEGORY_ICONS } from '../../ui/categoryIcons.js';
+import { withViewTransition } from '../../ui/viewTransition.js';
 import { createGradientTilesEngine } from './engine.js';
 
 // mesmas 4 opções de Formato do Espelho/Azulejo (ver frameOptions em
@@ -256,7 +257,7 @@ export const gradientTilesModule = {
           gradientState.format = value;
           gradientState.ratio = EXPORT_FRAME_RATIOS[value];
           buildSidebar();
-          applyOptions();
+          withViewTransition(applyOptions, { element: previewWrap, name: 'format-preview' });
         },
       });
       sidebar.appendChild(createSection(t('formatSectionTitle'), [framePicker.el], { id: 'format' }));

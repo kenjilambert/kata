@@ -3,9 +3,11 @@ import { createSlider } from '../../ui/controls/slider.js';
 import { createSelect } from '../../ui/controls/select.js';
 import { createIconSelect } from '../../ui/controls/iconSelect.js';
 import { createToggleSwitch } from '../../ui/controls/toggleSwitch.js';
+import { createFrameTilePicker } from '../../ui/controls/frameTilePicker.js';
 import { createButton, setButtonLabel, flashExportSuccess } from '../../ui/controls/button.js';
 import { createSection } from '../../ui/controls/section.js';
-import { exportSvgString, exportPngFromSvgString } from '../../core/export.js';
+import { exportSvgString, exportPngFromSvgString, EXPORT_FRAME_RATIOS } from '../../core/export.js';
+import { withViewTransition } from '../../ui/viewTransition.js';
 import { exportSeamlessPatternAsAi } from '../../core/aiPatternExport.js';
 import { listenForPaste, loadImageAsset } from '../../core/clipboard-input.js';
 import { openDrawCanvas } from '../../ui/drawCanvas.js';
@@ -30,12 +32,57 @@ const TILE_SIZE = 80;
 const MIN_TILES = 2;
 const MAX_TILES = 16;
 
+// mesmas proporções do Azulejo/Espelho/Gradiente/Som + "Tela cheia" — o
+// Mosaico não tem um motor ao vivo redesenhando quadro a quadro (é um SVG
+// estático, recalculado só quando algum controle muda, ver render()), mas
+// como SVG escala sem perder nitidez, "Tela cheia" aqui é mais simples que
+// nos outros módulos: só precisa CASAR a proporção da grade (tilesX/tilesY)
+// com a caixa medida na tela (ver computeFullBox), não controlar pixels de
+// um canvas.
+function frameOptions() {
+  return [
+    {
+      value: 'full',
+      ratio: Math.max(0.4, Math.min(2.5, window.innerWidth / Math.max(1, window.innerHeight))),
+      label: t('gradientFrameFull'),
+      caption: 'FULL',
+    },
+    { value: 'square', ratio: EXPORT_FRAME_RATIOS.square, label: t('exportFrame_square'), caption: '1:1' },
+    { value: 'portrait', ratio: EXPORT_FRAME_RATIOS.portrait, label: t('exportFrame_portrait'), caption: '4:5' },
+    { value: 'story', ratio: EXPORT_FRAME_RATIOS.story, label: t('exportFrame_story'), caption: '9:16' },
+    { value: 'landscape', ratio: EXPORT_FRAME_RATIOS.landscape, label: t('exportFrame_landscape'), caption: '16:9' },
+  ];
+}
+
+// área MÍNIMA usada como referência ao trocar de formato — sem isso, logo
+// depois de entrar na aba (tilesX/tilesY sempre voltam pro mínimo 2×2, ver
+// mount()), a conta de baixo tentava preservar uma área de só 4 ladrilhos:
+// pra proporções perto de 1:1 (como 4:5), arredondar sqrt(4/0.8)≈2 e
+// 2×0.8≈2 devolvia os MESMOS 2×2 de antes — parecia que o botão não fazia
+// nada. Com uma área de referência maior, toda troca de formato reorganiza
+// a grade de um jeito visível.
+const MIN_FORMAT_AREA = 48;
+
+// recalcula tilesX/tilesY pra bater com a proporção pedida, preservando (o
+// mais perto possível) o número TOTAL de ladrilhos que já estava em uso —
+// trocar de formato reorganiza a grade, não some com metade dos ladrilhos
+// nem dobra a densidade de repente.
+function tilesForFormat(ratio, currentTilesX, currentTilesY) {
+  const area = Math.max(MIN_FORMAT_AREA, currentTilesX * currentTilesY);
+  let tilesY = Math.round(Math.sqrt(area / ratio));
+  let tilesX = Math.round(tilesY * ratio);
+  tilesX = Math.max(MIN_TILES, Math.min(MAX_TILES, tilesX));
+  tilesY = Math.max(MIN_TILES, Math.min(MAX_TILES, tilesY));
+  return { tilesX, tilesY };
+}
+
 // estado só do Mosaico (tamanho da grade, máscara de densidade) — igual ao
 // patternState do Azulejo, vive no escopo do módulo (não dentro de mount())
 // pra sobreviver a trocar de aba e voltar, em vez de resetar toda vez.
 const mosaicState = {
+  format: 'square',
   tilesX: 8,
-  tilesY: 6,
+  tilesY: 8,
   gap: 0,
   mosaicSeed: randomSeed(),
   // por padrão o mosaico é uniforme (mesma densidade em todo tile, só
@@ -70,6 +117,7 @@ const mosaicState = {
 let cleanupPaste = null;
 let cleanupLang = null;
 let cleanupGradientShapeSelect = null;
+let cleanupResize = null;
 
 export const mosaicModule = {
   id: 'mosaic',
@@ -107,6 +155,27 @@ export const mosaicModule = {
     const preview = document.createElement('div');
     preview.className = 'mo-preview';
     previewWrap.appendChild(preview);
+
+    // espaço que sobra na tela pro preview no formato "Tela cheia" — MESMA
+    // conta de computeFullBox em video-tiles/gradient-tiles/sound-tiles.
+    // Diferente deles, aqui só precisamos da RAZÃO w/h (o Mosaico é SVG,
+    // que já escala sem perder nitidez via width:100%/height:auto no CSS —
+    // ver .mo-preview svg — então "caber na tela" é só casar tilesX/tilesY
+    // com essa proporção, não controlar pixel nenhum de canvas).
+    function computeFullBox() {
+      void stage.offsetWidth; // força o reflow antes de ler as medidas
+      const cs = getComputedStyle(stage);
+      const padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+      const padBottom = parseFloat(cs.paddingBottom) || 0;
+      const w = Math.max(160, (stage.clientWidth || window.innerWidth) - padX);
+      const top = previewWrap.getBoundingClientRect().top;
+      // sem desconto de "bottom sheet" aqui — diferente do Espelho/Gradiente/
+      // Som, a sidebar do Mosaico (.mo-controls, sem .vt-controls) nunca vira
+      // um painel fixo por cima do stage no mobile, fica no fluxo normal
+      // embaixo do preview (ver .mo-controls no media query em style.css).
+      const h = Math.max(160, window.innerHeight - top - padBottom - 12);
+      return { w: Math.round(w), h: Math.round(h) };
+    }
 
     // igual ao Azulejo: o botão de regenerar fica no stage, logo abaixo do
     // resultado, não na sidebar — construído uma vez em mount() (não a cada
@@ -242,6 +311,29 @@ export const mosaicModule = {
 
     function buildSidebar() {
       sidebar.innerHTML = '';
+
+      const framePicker = createFrameTilePicker({
+        options: frameOptions(),
+        value: state.format,
+        onChange: (value) => {
+          state.format = value;
+          // "Tela cheia" usa a proporção MEDIDA da caixa disponível na tela
+          // (não uma das 4 razões fixas) — ver computeFullBox.
+          let ratio = EXPORT_FRAME_RATIOS[value] ?? 1;
+          if (value === 'full') {
+            const box = computeFullBox();
+            ratio = box.w / box.h;
+          }
+          const { tilesX, tilesY } = tilesForFormat(ratio, state.tilesX, state.tilesY);
+          state.tilesX = tilesX;
+          state.tilesY = tilesY;
+          buildSidebar();
+          // preview morfa pra grade nova com um cross-fade rápido (ver
+          // ui/viewTransition.js) em vez de pular direto.
+          withViewTransition(render, { element: previewWrap, name: 'format-preview' });
+        },
+      });
+      sidebar.appendChild(createSection(t('formatSectionTitle'), [framePicker.el], { id: 'format' }));
 
       const gridElements = [
         createSlider({
@@ -580,6 +672,31 @@ export const mosaicModule = {
 
     render();
 
+    // "Tela cheia" precisa remedir quando a janela muda de tamanho (ou o
+    // celular gira) — mesma lógica do Espelho/Gradiente/Som, só que aqui
+    // recalcula tilesX/tilesY (a "razão" da grade) em vez de pixels de
+    // canvas.
+    let resizeRaf = null;
+    const onResize = () => {
+      if (state.format !== 'full') return;
+      if (resizeRaf != null) return;
+      resizeRaf = requestAnimationFrame(() => {
+        resizeRaf = null;
+        const box = computeFullBox();
+        const { tilesX, tilesY } = tilesForFormat(box.w / box.h, state.tilesX, state.tilesY);
+        state.tilesX = tilesX;
+        state.tilesY = tilesY;
+        buildSidebar();
+        render();
+      });
+    };
+    window.addEventListener('resize', onResize);
+    cleanupResize = () => {
+      window.removeEventListener('resize', onResize);
+      if (resizeRaf != null) cancelAnimationFrame(resizeRaf);
+      resizeRaf = null;
+    };
+
     cleanupPaste = listenForPaste(window, { onImage: (file) => handleMaskImage(file) });
     cleanupLang = onLangChange(() => {
       resultTitle.textContent = t('mosaicResultTitle');
@@ -604,6 +721,10 @@ export const mosaicModule = {
     if (cleanupGradientShapeSelect) {
       cleanupGradientShapeSelect();
       cleanupGradientShapeSelect = null;
+    }
+    if (cleanupResize) {
+      cleanupResize();
+      cleanupResize = null;
     }
   },
 };
