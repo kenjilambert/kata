@@ -66,7 +66,7 @@ setInterval(() => {
 setInterval(() => {
   if (currentModuleId !== 'sound') return;
   updateLogoAndFavicon();
-}, 220);
+}, 198);
 
 document.title = 'Kata';
 

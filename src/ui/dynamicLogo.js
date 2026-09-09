@@ -51,6 +51,11 @@ export function renderDynamicLogo(size = 2) {
 // escolhido junto do resto pra dar uma variação de silhueta, não só cor.
 const SOUND_LOGO_SHAPES = ['square', 'disc', 'diamond', 'quarterCircleInverse'];
 
+// cor fixa por LINHA (não por altura/valor calculado, não por coluna) —
+// de cima pra baixo: creme, azul, vermelho. Sempre as 3 cores JÁ usadas no
+// site (LOGO_COLORS), nunca uma mistura/intermediária.
+const SOUND_LOGO_ROW_COLORS = ['#f1eec0', '#3aa1d8', '#ea4530'];
+
 // fase da onda — anda um passo pequeno por chamada (ver PHASE_STEP), nunca
 // reseta: é o que faz a onda continuar deslizando pra direita indefinidamente
 // em vez de reiniciar/pular toda hora. Módulo (não closure) pelo mesmo
@@ -93,7 +98,9 @@ export function renderSoundLogo() {
       // branco, igual a barra de um equalizador de verdade.
       const filledFromBottom = size - r <= barHeight;
       if (!filledFromBottom) return { shape: 'blank' };
-      return { shape: columnShapes[c], orientation: 'br', color: LOGO_COLORS[c % LOGO_COLORS.length].color };
+      // r é a LINHA (0 = topo da grade) — SOUND_LOGO_ROW_COLORS[r] já é
+      // exatamente creme/azul/vermelho nessa ordem.
+      return { shape: columnShapes[c], orientation: 'br', color: SOUND_LOGO_ROW_COLORS[r] };
     })
   );
   return renderGridToSvg({
