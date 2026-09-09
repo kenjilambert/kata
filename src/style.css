@@ -2183,6 +2183,11 @@ body {
   border-color: var(--accent-2);
   color: var(--accent-text);
   font-weight: 700;
+  /* faltava — sem isso ficava a pílula (--radius-pill) só na variante
+     "primary" (vermelha), e essa (azul) herdava o --radius-md quadrado de
+     sempre; qualquer fileira com as duas juntas (Enviar áudio/vídeo +
+     Ativar mic/câmera) saía com um botão pílula do lado de um retângulo. */
+  border-radius: var(--radius-pill);
 }
 
 /* confirmação visual de exportação — o botão "enche" de branco da

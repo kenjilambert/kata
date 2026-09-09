@@ -4,8 +4,8 @@
 // se a pessoa tivesse acabado de clicar em "Novo azulejo" assim que abre o
 // site). Cada visita mostra uma composição diferente, sempre dentro da
 // mesma "família" visual.
-import { generateIcon } from '../modules/grid-icons/generator.js';
-import { randomSeed } from '../core/seed.js';
+import { generateIcon, renderGridToSvg } from '../modules/grid-icons/generator.js';
+import { randomSeed, createRng } from '../core/seed.js';
 
 const LOGO_ICON_SIZE = 40;
 
@@ -39,6 +39,39 @@ export function renderDynamicLogo(size = 2) {
     detailGradient: 'center',
     shapesAllowed: ['diamond', 'square', 'triangle', 'quarterCircleInverse', 'disc'],
     colors: LOGO_COLORS,
+    fillEnabled: true,
+    strokeEnabled: false,
+    appearance: { transparentBackground: true },
+  });
+}
+
+// logo da aba Som — em vez do padrão aleatório de sempre (que não lembra
+// nada de áudio), uma grade 3x3 fixa onde cada COLUNA é uma barrinha de
+// espectrômetro (quadrados empilhados de baixo pra cima, o resto da
+// coluna em branco) — a mesma ideia visual do próprio módulo (ver
+// sound-tiles/engine.js), só reduzida a um ícone de 3 barras "subindo e
+// descendo". Altura de cada barra sorteada a cada chamada (mesmo espírito
+// de variar a cada troca de aba que o resto do logo já tem), sempre pelo
+// menos 1 célula cheia — uma barra zerada pareceria célula vazia/quebrada.
+export function renderSoundLogo() {
+  const rng = createRng(randomSeed());
+  const size = 3;
+  const heights = Array.from({ length: size }, () => 1 + Math.floor(rng() * size));
+  const grid = Array.from({ length: size }, (_, r) =>
+    Array.from({ length: size }, (_, c) => {
+      const barHeight = heights[c];
+      // linha 0 = topo da grade — uma coluna com barHeight=2 preenche as
+      // 2 células de BAIXO (linhas size-1 e size-2), deixando o topo em
+      // branco, igual a barra de um equalizador de verdade.
+      const filledFromBottom = size - r <= barHeight;
+      if (!filledFromBottom) return { shape: 'blank' };
+      return { shape: 'square', color: LOGO_COLORS[c % LOGO_COLORS.length].color };
+    })
+  );
+  return renderGridToSvg({
+    grid,
+    size,
+    iconSize: LOGO_ICON_SIZE,
     fillEnabled: true,
     strokeEnabled: false,
     appearance: { transparentBackground: true },

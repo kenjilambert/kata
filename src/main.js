@@ -5,7 +5,7 @@ import { videoTilesModule } from './modules/video-tiles/index.js';
 import { gradientTilesModule } from './modules/gradient-tiles/index.js';
 import { soundTilesModule } from './modules/sound-tiles/index.js';
 import { initCustomCursor } from './ui/customCursor.js';
-import { renderDynamicLogo } from './ui/dynamicLogo.js';
+import { renderDynamicLogo, renderSoundLogo } from './ui/dynamicLogo.js';
 import { getLang, setLang, onLangChange, AVAILABLE_LANGS } from './core/i18n.js';
 
 initCustomCursor();
@@ -25,7 +25,10 @@ let currentModuleId = null;
 function updateLogoAndFavicon(moduleId) {
   if (moduleId) currentModuleId = moduleId;
   const gridSize = currentModuleId === 'mosaic' ? 3 : 2;
-  const logoSvg = renderDynamicLogo(gridSize);
+  // aba Som: em vez da grade aleatória de sempre, 3 barrinhas de
+  // espectrômetro (ver renderSoundLogo em dynamicLogo.js) — lembra o
+  // próprio módulo, não é só mais um padrão de formas soltas.
+  const logoSvg = currentModuleId === 'sound' ? renderSoundLogo() : renderDynamicLogo(gridSize);
   logoEl.innerHTML = logoSvg;
   // aba Gradiente: logo fica girando de cor sozinho (ver @keyframes
   // logo-hue-cycle em style.css) — as outras abas não ganham essa classe,
@@ -45,13 +48,16 @@ function updateLogoAndFavicon(moduleId) {
 }
 
 // logo/favicon regeneram sozinhos a cada 1s, mas só enquanto a aba Espelho
-// (id 'video') está ativa — nas outras abas o logo continua do jeito de
-// sempre (só muda ao trocar de módulo/aba, nunca sozinho). renderDynamicLogo
-// já sorteia uma seed nova a cada chamada (ver ui/dynamicLogo.js), então só
-// precisa ser chamado nesse intervalo; moduleId omitido reaproveita
-// currentModuleId (não muda o tamanho da grade, só gera outra composição).
+// (id 'video') ou Som (id 'sound') está ativa — nas outras abas o logo
+// continua do jeito de sempre (só muda ao trocar de módulo/aba, nunca
+// sozinho). Em Som é isso que faz as barrinhas do espectrômetro parecerem
+// "subindo e descendo" sozinhas, não só uma composição parada. renderDynamicLogo/
+// renderSoundLogo já sorteiam uma seed nova a cada chamada (ver
+// ui/dynamicLogo.js), então só precisa ser chamado nesse intervalo;
+// moduleId omitido reaproveita currentModuleId (não muda o tamanho da
+// grade, só gera outra composição).
 setInterval(() => {
-  if (currentModuleId !== 'video') return;
+  if (currentModuleId !== 'video' && currentModuleId !== 'sound') return;
   updateLogoAndFavicon();
 }, 1000);
 

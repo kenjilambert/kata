@@ -42,7 +42,7 @@ function frameOptions() {
 // próprio daqui.
 const soundState = {
   resolution: 32,
-  format: 'square',
+  format: 'full',
   ratio: EXPORT_FRAME_RATIOS.square,
   shapeScale: 1,
   colorMode: 'palette', // 'grayscale' | 'palette' | 'custom' | 'gradient' (sem 'source' — não existe "cor do áudio")

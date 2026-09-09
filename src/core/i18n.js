@@ -256,8 +256,13 @@ const STRINGS = {
     soundResultTitle: 'Som',
     soundSourceSection: 'Fonte',
     soundUploadButton: 'Enviar áudio',
-    soundMicButton: 'Ativar microfone',
-    soundMicStopButton: 'Desligar microfone',
+    // "Mic" (não "microfone" por extenso) — no botão ao lado de "Enviar
+    // áudio"/"Ativar câmera" (Espelho), o rótulo comprido quebrava em 2
+    // linhas (a fileira reparte a largura igual entre os 2 botões, ver
+    // .vt-source-row em style.css), deixando o botão bem mais alto/gordo
+    // que o do Espelho — o padrão que essa aba deveria seguir.
+    soundMicButton: 'Ativar mic',
+    soundMicStopButton: 'Desligar mic',
     soundSourceHint: 'Envie um áudio ou ative o microfone para começar.',
     soundMicError: 'Não foi possível acessar o microfone.',
     soundAudioSection: 'Áudio',
@@ -528,8 +533,8 @@ const STRINGS = {
     soundResultTitle: 'Sound',
     soundSourceSection: 'Source',
     soundUploadButton: 'Upload audio',
-    soundMicButton: 'Turn on microphone',
-    soundMicStopButton: 'Turn off microphone',
+    soundMicButton: 'Turn on mic',
+    soundMicStopButton: 'Turn off mic',
     soundSourceHint: 'Upload an audio file or turn on the microphone to get started.',
     soundMicError: "Couldn't access the microphone.",
     soundAudioSection: 'Audio',
