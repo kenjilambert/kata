@@ -47,19 +47,27 @@ function updateLogoAndFavicon(moduleId) {
   document.head.appendChild(faviconEl);
 }
 
-// logo/favicon regeneram sozinhos a cada 1s, mas só enquanto a aba Espelho
-// (id 'video') ou Som (id 'sound') está ativa — nas outras abas o logo
-// continua do jeito de sempre (só muda ao trocar de módulo/aba, nunca
-// sozinho). Em Som é isso que faz as barrinhas do espectrômetro parecerem
-// "subindo e descendo" sozinhas, não só uma composição parada. renderDynamicLogo/
-// renderSoundLogo já sorteiam uma seed nova a cada chamada (ver
-// ui/dynamicLogo.js), então só precisa ser chamado nesse intervalo;
-// moduleId omitido reaproveita currentModuleId (não muda o tamanho da
-// grade, só gera outra composição).
+// logo/favicon regeneram sozinhos enquanto a aba Espelho (id 'video') está
+// ativa — nas outras abas o logo continua do jeito de sempre (só muda ao
+// trocar de módulo/aba, nunca sozinho). renderDynamicLogo já sorteia uma
+// seed nova a cada chamada (ver ui/dynamicLogo.js), então só precisa ser
+// chamado nesse intervalo; moduleId omitido reaproveita currentModuleId
+// (não muda o tamanho da grade, só gera outra composição).
 setInterval(() => {
-  if (currentModuleId !== 'video' && currentModuleId !== 'sound') return;
+  if (currentModuleId !== 'video') return;
   updateLogoAndFavicon();
 }, 1000);
+
+// Som troca bem mais rápido que isso — 1s dava uma sensação de "pulo"
+// esquisito pra algo que devia parecer som reagindo ao vivo (as barras do
+// espectrômetro de verdade, ver sound-tiles/engine.js, reagem a cada
+// quadro). renderSoundLogo só anda 1 célula de altura por chamada (ver
+// soundLogoHeights ali), então mesmo nesse ritmo mais rápido a barra sobe/
+// desce suave, não pisca aleatório.
+setInterval(() => {
+  if (currentModuleId !== 'sound') return;
+  updateLogoAndFavicon();
+}, 140);
 
 document.title = 'Kata';
 

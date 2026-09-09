@@ -45,27 +45,47 @@ export function renderDynamicLogo(size = 2) {
   });
 }
 
+// formas que ainda dão pra reconhecer numa célula de ~13px (ícone de 40px
+// ÷ grade 3x3) — nada com detalhe fino (anel, asterisco...) que vira uma
+// mancha nesse tamanho; 'quarterCircleInverse' é orientável (canto),
+// escolhido junto do resto pra dar uma variação de silhueta, não só cor.
+const SOUND_LOGO_SHAPES = ['square', 'disc', 'diamond', 'quarterCircleInverse'];
+const ALL_CORNERS = ['tl', 'tr', 'bl', 'br'];
+
+// altura (em células) de cada barra entre uma chamada e a próxima — só
+// anda 1 célula por vez (nunca pula de 1 pra 3 direto) — é isso que faz
+// a variação parecer uma barra "reagindo" ao som de verdade (como o
+// ataque/alívio suave do próprio motor de Som, ver ATTACK/RELEASE em
+// sound-tiles/engine.js) em vez de 3 números aleatórios diferentes surgindo
+// do nada a cada troca — coeficiente sobrevive entre chamadas (módulo, não
+// closure) porque é chamado de nível de módulo (main.js), sem instância.
+let soundLogoHeights = null;
+
 // logo da aba Som — em vez do padrão aleatório de sempre (que não lembra
 // nada de áudio), uma grade 3x3 fixa onde cada COLUNA é uma barrinha de
-// espectrômetro (quadrados empilhados de baixo pra cima, o resto da
-// coluna em branco) — a mesma ideia visual do próprio módulo (ver
-// sound-tiles/engine.js), só reduzida a um ícone de 3 barras "subindo e
-// descendo". Altura de cada barra sorteada a cada chamada (mesmo espírito
-// de variar a cada troca de aba que o resto do logo já tem), sempre pelo
-// menos 1 célula cheia — uma barra zerada pareceria célula vazia/quebrada.
+// espectrômetro (formas empilhadas de baixo pra cima, o resto da coluna em
+// branco) — a mesma ideia visual do próprio módulo (ver sound-tiles/
+// engine.js), só reduzida a um ícone de 3 barras "subindo e descendo".
 export function renderSoundLogo() {
   const rng = createRng(randomSeed());
   const size = 3;
-  const heights = Array.from({ length: size }, () => 1 + Math.floor(rng() * size));
+  if (!soundLogoHeights) soundLogoHeights = Array.from({ length: size }, () => 1 + Math.floor(rng() * size));
+  soundLogoHeights = soundLogoHeights.map((h) => {
+    const target = 1 + Math.floor(rng() * size);
+    if (target === h) return h;
+    return target > h ? h + 1 : h - 1;
+  });
   const grid = Array.from({ length: size }, (_, r) =>
     Array.from({ length: size }, (_, c) => {
-      const barHeight = heights[c];
+      const barHeight = soundLogoHeights[c];
       // linha 0 = topo da grade — uma coluna com barHeight=2 preenche as
       // 2 células de BAIXO (linhas size-1 e size-2), deixando o topo em
       // branco, igual a barra de um equalizador de verdade.
       const filledFromBottom = size - r <= barHeight;
       if (!filledFromBottom) return { shape: 'blank' };
-      return { shape: 'square', color: LOGO_COLORS[c % LOGO_COLORS.length].color };
+      const shape = SOUND_LOGO_SHAPES[Math.floor(rng() * SOUND_LOGO_SHAPES.length)];
+      const orientation = ALL_CORNERS[Math.floor(rng() * ALL_CORNERS.length)];
+      return { shape, orientation, color: LOGO_COLORS[c % LOGO_COLORS.length].color };
     })
   );
   return renderGridToSvg({
