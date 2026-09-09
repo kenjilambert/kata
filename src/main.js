@@ -58,16 +58,15 @@ setInterval(() => {
   updateLogoAndFavicon();
 }, 1000);
 
-// Som troca bem mais rápido que isso — 1s dava uma sensação de "pulo"
-// esquisito pra algo que devia parecer som reagindo ao vivo (as barras do
-// espectrômetro de verdade, ver sound-tiles/engine.js, reagem a cada
-// quadro). renderSoundLogo só anda 1 célula de altura por chamada (ver
-// soundLogoHeights ali), então mesmo nesse ritmo mais rápido a barra sobe/
-// desce suave, não pisca aleatório.
+// Som troca num ritmo próprio — 1s dava um "pulo" esquisito, mas rápido
+// demais (a primeira tentativa, 140ms) ficou caótico com 3 barras
+// independentes. Agora é uma onda de verdade (ver soundLogoPhase em
+// dynamicLogo.js), então o movimento em si já é ordeiro — esse intervalo só
+// controla a velocidade que ela desliza, não pulos aleatórios.
 setInterval(() => {
   if (currentModuleId !== 'sound') return;
   updateLogoAndFavicon();
-}, 140);
+}, 220);
 
 document.title = 'Kata';
 

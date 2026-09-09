@@ -50,42 +50,50 @@ export function renderDynamicLogo(size = 2) {
 // mancha nesse tamanho; 'quarterCircleInverse' é orientável (canto),
 // escolhido junto do resto pra dar uma variação de silhueta, não só cor.
 const SOUND_LOGO_SHAPES = ['square', 'disc', 'diamond', 'quarterCircleInverse'];
-const ALL_CORNERS = ['tl', 'tr', 'bl', 'br'];
 
-// altura (em células) de cada barra entre uma chamada e a próxima — só
-// anda 1 célula por vez (nunca pula de 1 pra 3 direto) — é isso que faz
-// a variação parecer uma barra "reagindo" ao som de verdade (como o
-// ataque/alívio suave do próprio motor de Som, ver ATTACK/RELEASE em
-// sound-tiles/engine.js) em vez de 3 números aleatórios diferentes surgindo
-// do nada a cada troca — coeficiente sobrevive entre chamadas (módulo, não
-// closure) porque é chamado de nível de módulo (main.js), sem instância.
-let soundLogoHeights = null;
+// fase da onda — anda um passo pequeno por chamada (ver PHASE_STEP), nunca
+// reseta: é o que faz a onda continuar deslizando pra direita indefinidamente
+// em vez de reiniciar/pular toda hora. Módulo (não closure) pelo mesmo
+// motivo do comentário antigo aqui: chamado do nível de módulo (main.js).
+let soundLogoPhase = 0;
+
+// passo da fase por chamada — pequeno o bastante (com o intervalo de
+// main.js) pra parecer uma onda deslizando suave, não um "pulo" de estado
+// aleatório em estado a cada troca (era esse o defeito da versão anterior,
+// com alturas independentes sorteadas por coluna).
+const PHASE_STEP = 0.35;
 
 // logo da aba Som — em vez do padrão aleatório de sempre (que não lembra
 // nada de áudio), uma grade 3x3 fixa onde cada COLUNA é uma barrinha de
 // espectrômetro (formas empilhadas de baixo pra cima, o resto da coluna em
-// branco) — a mesma ideia visual do próprio módulo (ver sound-tiles/
-// engine.js), só reduzida a um ícone de 3 barras "subindo e descendo".
+// branco). A altura de cada coluna segue uma senoide deslocada pelo ÍNDICE
+// da coluna — uma onda de verdade viajando da esquerda pra direita (fase
+// da coluna 0 sempre um passo à frente da 1, que fica um passo à frente da
+// 2), não 3 barras subindo/descendo cada uma por conta própria (isso é que
+// parecia caótico). A forma de cada coluna é fixa (1 por coluna, não
+// sorteada célula a célula) — dá a variedade de silhueta pedida sem virar
+// ruído visual a cada quadro.
 export function renderSoundLogo() {
-  const rng = createRng(randomSeed());
   const size = 3;
-  if (!soundLogoHeights) soundLogoHeights = Array.from({ length: size }, () => 1 + Math.floor(rng() * size));
-  soundLogoHeights = soundLogoHeights.map((h) => {
-    const target = 1 + Math.floor(rng() * size);
-    if (target === h) return h;
-    return target > h ? h + 1 : h - 1;
+  soundLogoPhase += PHASE_STEP;
+  const heights = Array.from({ length: size }, (_, c) => {
+    // seno vai de -1 a 1; mapeado pra 1..size (nunca uma barra totalmente
+    // vazia, mesma regra de antes). Defasagem de ~1.4 rad por coluna é o
+    // que separa visualmente uma onda "viajando" de todas as barras
+    // subindo/descendo juntas em uníssono.
+    const wave = Math.sin(soundLogoPhase - c * 1.4);
+    return 1 + Math.round(((wave + 1) / 2) * (size - 1));
   });
+  const columnShapes = [SOUND_LOGO_SHAPES[0], SOUND_LOGO_SHAPES[1], SOUND_LOGO_SHAPES[2]];
   const grid = Array.from({ length: size }, (_, r) =>
     Array.from({ length: size }, (_, c) => {
-      const barHeight = soundLogoHeights[c];
+      const barHeight = heights[c];
       // linha 0 = topo da grade — uma coluna com barHeight=2 preenche as
       // 2 células de BAIXO (linhas size-1 e size-2), deixando o topo em
       // branco, igual a barra de um equalizador de verdade.
       const filledFromBottom = size - r <= barHeight;
       if (!filledFromBottom) return { shape: 'blank' };
-      const shape = SOUND_LOGO_SHAPES[Math.floor(rng() * SOUND_LOGO_SHAPES.length)];
-      const orientation = ALL_CORNERS[Math.floor(rng() * ALL_CORNERS.length)];
-      return { shape, orientation, color: LOGO_COLORS[c % LOGO_COLORS.length].color };
+      return { shape: columnShapes[c], orientation: 'br', color: LOGO_COLORS[c % LOGO_COLORS.length].color };
     })
   );
   return renderGridToSvg({
