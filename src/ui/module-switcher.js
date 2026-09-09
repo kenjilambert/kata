@@ -197,6 +197,11 @@ export function createModuleSwitcher(container, modules, tabsContainer, { onActi
       label.textContent = resolveLabel(mod);
     });
     comingSoonTab.textContent = t('comingSoonTab');
+    // o texto novo (pt/en têm tamanhos diferentes, ex. "Espelho" x "Mirror")
+    // muda a largura do próprio botão — sem reposicionar a pílula aqui, ela
+    // ficava com a largura/posição ANTIGA (de antes da troca), grudada torta
+    // em cima do botão que já mudou de tamanho.
+    if (current) moveActiveIndicator(current);
   });
 
   if (modules.length) activate(modules[0]);
