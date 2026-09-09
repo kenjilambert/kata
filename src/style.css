@@ -892,9 +892,18 @@ body {
 }
 
 .gi-preview svg {
+  /* SEM max-width fixo — isso era um teto de 540px sobrado de quando o
+     preview nunca passava desse tamanho; agora que a caixa (.gi-preview-
+     wrap) pode crescer bem além disso (janela larga, "Tela cheia"...), o
+     teto deixava a arte pequena e presa no canto, com um vão gigante de
+     fundo xadrez transparente em volta — mesmo bug do Mosaico corrigido
+     antes, só que aqui ainda sobrava esse limite antigo. A proporção da
+     caixa já bate exatamente com a do viewBox do SVG (ver
+     computePreviewBoxSize/updatePreviewFrame, que usa a razão REAL da
+     composição pra dimensionar a caixa) — então 100%/100% preenche
+     perfeito, sem cortar nem sobrar. */
   width: 100%;
-  max-width: 540px;
-  height: auto;
+  height: 100%;
   display: block;
   margin: 0 auto;
 }
