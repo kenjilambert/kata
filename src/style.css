@@ -1452,6 +1452,58 @@ body {
   transform: translate(-50%, -50%) scale(1.15);
 }
 
+/* variante vertical (orientation:'vertical' em createSlider) — só o
+   volume do player de áudio usa isso até agora (ver .sound-player-volume-
+   popover), um fader de verdade em pé em vez de um slider deitado comum.
+   Reaproveita TODA a mecânica de arraste/teclado de sempre (ver
+   ui/controls/slider.js), só troca qual eixo (width/height, left/top) o
+   CSS usa pra desenhar — a lógica de qual eixo o PONTEIRO lê já foi
+   tratada em JS (valueFromPointer). */
+.control-slider-vertical .slider-row {
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+}
+
+.control-slider-vertical .slider-track-wrap {
+  flex: 1;
+  width: 20px;
+  height: auto;
+  min-height: 0;
+  /* a base é flex EM LINHA (display:flex; align-items:center — herdado),
+     então align-items só centraliza no eixo CRUZADO (vertical numa linha),
+     nunca no horizontal. Sem justify-content:center aqui, a trilha
+     (.slider-track-inner, mais estreita que os 20px desta caixa) ficava
+     grudada na borda ESQUERDA em vez de centralizada — a bolinha (fora do
+     fluxo, position:absolute) media 50% de OUTRA caixa e acabava "flutuando
+     longe" da trilha de verdade. */
+  justify-content: center;
+}
+
+.control-slider-vertical .slider-track-inner {
+  width: auto;
+  height: calc(100% - 16px);
+  margin: 8px 0;
+}
+
+.control-slider-vertical .slider-track {
+  width: 4px;
+  height: 100%;
+}
+
+.control-slider-vertical .slider-fill {
+  top: auto;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 0; /* setado via JS, ver updateVisual */
+}
+
+.control-slider-vertical .slider-thumb {
+  top: 0; /* setado via JS */
+  left: 50%;
+}
+
 .control-toggle-switch {
   display: flex;
   flex-direction: row;
@@ -2554,6 +2606,225 @@ body {
 
 .vt-source-row .control-button {
   flex: 1;
+}
+
+/* player do arquivo carregado (aba Som) — nome da faixa/progresso/
+   transporte/volume do que já foi enviado, distinto da fileira Enviar/
+   Ativar (essa decide a FONTE, o player trabalha em cima do que já foi
+   escolhido). Layout de player de música de verdade (nome em cima, tempo
+   nas PONTAS da trilha, botão de tocar grande centralizado) — só existe
+   (visível) com uma fonte tipo arquivo — nunca com o microfone, ver
+   sound-tiles/index.js. */
+/* cartão que engloba o player inteiro — retângulo com um tom de azul
+   (--accent-2) sutil, separando visualmente "o que já foi carregado" do
+   resto da seção Fonte (que é sobre ESCOLHER a fonte, não sobre tocar o
+   que já foi escolhido). */
+.sound-player {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 10px 14px 14px;
+  background: color-mix(in srgb, var(--accent-2) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-2) 30%, transparent);
+  border-radius: var(--radius-md);
+}
+
+/* botão "Cancelar" (Enviar áudio vira isso enquanto há um arquivo
+   carregado, ver sound-tiles/index.js) — MESMO tom do cartão do player
+   acima (não mais o azul sólido de sempre): sinaliza "desfazer o que já
+   foi enviado", não uma ação "principal" de novo tipo enviar. */
+.sound-player-cancel-button {
+  background: color-mix(in srgb, var(--accent-2) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent-2) 30%, transparent);
+  color: var(--accent-2);
+}
+
+.sound-player-cancel-button:hover {
+  background: color-mix(in srgb, var(--accent-2) 20%, transparent);
+  border-color: var(--accent-2);
+}
+
+.sound-player-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+
+.sound-player-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* control-slider normal tem padding-top pro label (escondido aqui, mas
+   ainda ocupava a caixa) — sem zerar isso, a trilha ficava desalinhada
+   verticalmente com os textos de tempo do lado (eles no meio da própria
+   altura, a trilha um pouco mais acima). */
+.sound-player-progress .control-slider {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+}
+
+.sound-player-progress .control-label {
+  display: none;
+}
+
+.sound-player-time {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+/* position:relative aqui é o que deixa o volume (.sound-player-volume,
+   absolute) grudado na borda direita, sem empurrar nem disputar espaço
+   com o grupo central — que fica centralizado na fileira INTEIRA (não só
+   no espaço que sobra do volume), via justify-content:center aqui. */
+.sound-player-transport {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* voltar/tocar/avançar juntos, mesma proporção nos 3 (ver
+   .sound-player-icon-button abaixo — o botão de tocar usa a MESMA classe
+   agora, só muda a cor de fundo). */
+.sound-player-center-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* botões só de ícone (sem rótulo) — mesmo .control-button de sempre, só
+   redondo e sem o padding largo pensado pra texto ao lado. Tocar/pausar
+   usa a MESMA classe (mesmo tamanho que voltar/avançar) — só
+   .sound-player-play-button muda a COR, não o tamanho (era maior antes;
+   "mesma proporção" pedido explicitamente). */
+.sound-player-icon-button {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: 999px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+}
+
+.sound-player-icon-button:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+
+/* .control-button-icon do componente já centraliza sozinho (display:flex
+   no ui/controls/button.js) — só o tamanho do SVG precisa de ajuste aqui. */
+.sound-player-icon-button .control-button-icon svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
+/* repetir ativo — mesma cor de destaque do resto do site, não um texto
+   "ligado/desligado" (o botão não tem rótulo nenhum). */
+.sound-player-icon-button.active {
+  color: var(--accent-2);
+}
+
+/* tocar/pausar — mesmo tamanho do resto (.sound-player-icon-button), só a
+   cor de fundo (destaque) diferencia como a ação PRINCIPAL do grupo. */
+.sound-player-play-button {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.sound-player-play-button:hover {
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+/* repetir — espelha o volume (mesma posição, lado oposto): sem ele, o
+   grupo central sozinho deixava a ponta esquerda vazia à toa. Cor ativa
+   igual sempre (.sound-player-icon-button.active). */
+.sound-player-repeat {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* volume — botão de alto-falante (fora do grupo central, grudado à
+   direita, ver .sound-player-transport acima) + popover flutuante com um
+   FADER VERTICAL comprido (não mais um slider horizontal gigante, nem o
+   fader minúsculo da 1ª tentativa — 190px de altura de verdade, dá pra
+   arrastar). position:relative aqui é o que ancora o popover
+   (position:absolute) em cima do botão. */
+.sound-player-volume {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* nasce EXATAMENTE de onde o botão de alto-falante está (bottom:0 aqui =
+   mesma borda de baixo do próprio botão, ver .sound-player-volume acima —
+   ele só "encolhe" ao redor do botão, mesma largura/posição) e cresce pra
+   CIMA — parece o botão "esticando" um fader pra fora dele mesmo, não um
+   cartão largado boiando longe, sem relação nenhuma com o botão que abriu
+   ele. left:50%/translateX(-50%) centraliza pelo MEIO do botão (imune a
+   qualquer diferença de largura entre os dois, ao contrário de alinhar
+   pelas bordas). */
+.sound-player-volume-popover {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40px;
+  height: 190px;
+  /* SEM padding embaixo — o botão de mutar (ver order:2 abaixo) precisa
+     ficar colado na borda de baixo do popover, que por sua vez é a MESMA
+     borda de baixo do botão de fora (bottom:0 em .sound-player-volume-
+     popover é relativo a .sound-player-volume, que só envolve o próprio
+     botão). Um padding aqui embaixo empurrava o botão pra CIMA da posição
+     original — exatamente o "o ícone sobe junto com o slider" reclamado:
+     o botão precisa ficar PARADO, só o fader é que cresce por CIMA dele. */
+  padding: 14px 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  z-index: 5;
+}
+
+/* o mute fica embaixo (MESMO lugar visual do botão que abriu o popover —
+   por isso a ORDEM no HTML importa, ver sound-tiles/index.js: fader
+   primeiro, botão depois) — fora do fluxo do fader (flex-shrink:0, altura
+   própria fixa). O resto da altura do popover (flex:1 no fader acima) é
+   só a trilha. */
+.sound-player-volume-popover .sound-player-mute-button {
+  flex-shrink: 0;
+  order: 2;
+}
+
+.sound-player-volume-popover .control-slider {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  order: 1;
 }
 
 .vt-source-video {

@@ -6,9 +6,35 @@
 // do mínimo/máximo) foi removido de novo — não pegou bem, voltou pro
 // comportamento simples de travar na borda.
 
-export function createSlider({ label, min, max, step = 1, value, onChange, formatValue = (v) => String(v) }) {
+// hideLabel/hideValueBox — opcionais, só usados pela barra de progresso do
+// player de áudio (aba Som): ali o "rótulo" e o "valor" de sempre (nome da
+// seção em cima, caixinha de número do lado) não cabem no layout de player
+// de música de verdade (tempo decorrido/total nas PONTAS da trilha, ver
+// sound-tiles/index.js) — em vez de duplicar toda a lógica de arraste/
+// teclado só por isso, os elementos continuam existindo (menos DOM
+// condicional == menos bug), só ficam com `hidden` (nunca ocupam espaço
+// nem saem do layout normal dos outros sliders do site).
+export function createSlider({
+  label,
+  min,
+  max,
+  step = 1,
+  value,
+  onChange,
+  formatValue = (v) => String(v),
+  hideLabel = false,
+  hideValueBox = false,
+  // 'horizontal' (padrão, sempre) ou 'vertical' — só o volume do player de
+  // áudio (aba Som) usa vertical até agora (ver sound-tiles/index.js), como
+  // um fader de mesa de som/player de música de verdade, não um slider
+  // deitado comum. Muda o eixo que o arraste lê (clientY em vez de
+  // clientX) e a direção do preenchimento (de baixo pra cima, não da
+  // esquerda pra direita) — o resto (steps, teclado, min/max) é idêntico.
+  orientation = 'horizontal',
+}) {
+  const vertical = orientation === 'vertical';
   const wrap = document.createElement('div');
-  wrap.className = 'control control-slider';
+  wrap.className = `control control-slider${vertical ? ' control-slider-vertical' : ''}`;
 
   const labelSpan = document.createElement('span');
   labelSpan.className = 'control-label';
@@ -63,8 +89,16 @@ export function createSlider({ label, min, max, step = 1, value, onChange, forma
 
   function updateVisual() {
     const pct = percentFor(currentValue);
-    fill.style.width = `${pct}%`;
-    thumb.style.left = `${pct}%`;
+    if (vertical) {
+      // preenche de BAIXO pra cima (0 no rodapé, como um fader de mesa de
+      // som/volume de player de música) — thumb.top é medido do TOPO, daí
+      // o (100-pct).
+      fill.style.height = `${pct}%`;
+      thumb.style.top = `${100 - pct}%`;
+    } else {
+      fill.style.width = `${pct}%`;
+      thumb.style.left = `${pct}%`;
+    }
     trackWrap.setAttribute('aria-valuenow', String(currentValue));
   }
 
@@ -77,9 +111,15 @@ export function createSlider({ label, min, max, step = 1, value, onChange, forma
     valueBox.style.setProperty('--value-proximity', String(percentFor(currentValue) / 100));
   }
 
-  function valueFromClientX(clientX) {
+  function valueFromPointer(e) {
     const rect = track.getBoundingClientRect();
-    const ratio = rect.width === 0 ? 0 : (clientX - rect.left) / rect.width;
+    if (vertical) {
+      // eixo Y invertido: topo da trilha = valor MÁXIMO, rodapé = mínimo
+      // (o oposto do padrão vertical do CSS, mas o normal pra um fader).
+      const ratio = rect.height === 0 ? 0 : (rect.bottom - e.clientY) / rect.height;
+      return stepify(clamp(min + ratio * (max - min)));
+    }
+    const ratio = rect.width === 0 ? 0 : (e.clientX - rect.left) / rect.width;
     return stepify(clamp(min + ratio * (max - min)));
   }
 
@@ -94,7 +134,7 @@ export function createSlider({ label, min, max, step = 1, value, onChange, forma
 
   function handlePointerMove(e) {
     if (!dragging) return;
-    commit(valueFromClientX(e.clientX));
+    commit(valueFromPointer(e));
   }
 
   function handlePointerUp(e) {
@@ -124,7 +164,7 @@ export function createSlider({ label, min, max, step = 1, value, onChange, forma
          garantida, só perde o "segue mesmo saindo da área" em algum
          browser raro. */
     }
-    commit(valueFromClientX(e.clientX));
+    commit(valueFromPointer(e));
   });
   trackWrap.addEventListener('pointermove', handlePointerMove);
   trackWrap.addEventListener('pointerup', handlePointerUp);
@@ -152,9 +192,11 @@ export function createSlider({ label, min, max, step = 1, value, onChange, forma
 
   row.appendChild(trackWrap);
   row.appendChild(valueBox);
+  valueBox.hidden = hideValueBox;
 
   wrap.appendChild(labelSpan);
   wrap.appendChild(row);
+  labelSpan.hidden = hideLabel;
 
   return {
     el: wrap,

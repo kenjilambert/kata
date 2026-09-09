@@ -71,6 +71,8 @@ let recordTimerId = null;
 let gifTimerId = null;
 let cleanupThemeSelect = null;
 let cleanupResize = null;
+let cleanupAudioProgress = null;
+let cleanupVolumePopover = null;
 
 function formatSeconds(totalMs) {
   const s = Math.floor(totalMs / 1000);
@@ -181,6 +183,7 @@ export const soundTilesModule = {
     let freezeButton;
     let playButton;
     let micButton;
+    let micSelectSlot;
 
     function stopRecordTimer() {
       if (recordTimerId) {
@@ -246,12 +249,78 @@ export const soundTilesModule = {
       else startGif();
     }
 
+    // enumerateDevices() só devolve deviceId/label de verdade depois de já
+    // ter permissão de microfone concedida ao menos uma vez nesta sessão —
+    // mesma regra do refreshCameraSelect do Espelho (video-tiles/index.js),
+    // só que pra microfone. Some sozinho se só existir 1 (nada pra
+    // escolher).
+    async function refreshMicSelect() {
+      micSelectSlot.innerHTML = '';
+      // .control-section-body-inner usa `gap` (não margin) entre os filhos
+      // — um <div> vazio ainda CONTA pro gap dos dois lados dele, mesmo
+      // sem conteúdo nenhum (só `display:none`/[hidden] tira do fluxo de
+      // verdade). Sem isso aqui, esse slot ficava 0px de altura mas ainda
+      // "roubava" 2x o gap da seção (antes E depois dele) sempre que não
+      // tinha 2+ microfones pra listar — era esse o "espaço desnecessário"
+      // enorme entre a fileira de botões e o cartão do player.
+      micSelectSlot.hidden = true;
+      if (!engine.isMicActive()) return;
+      const mics = await engine.listMics();
+      if (mics.length < 2) return;
+      const select = createSelect({
+        label: t('soundMicDeviceLabel'),
+        options: mics.map((mic, i) => ({ value: mic.deviceId, label: mic.label || `${t('soundMicDeviceLabel')} ${i + 1}` })),
+        value: engine.getActiveMicDeviceId() || mics[0].deviceId,
+        onChange: async (deviceId) => {
+          try {
+            await engine.enableMic(deviceId);
+          } catch (err) {
+            errorMsg.textContent = `${t('soundMicError')} (${err?.name || err?.message || err})`;
+            errorMsg.hidden = false;
+          }
+        },
+      });
+      micSelectSlot.appendChild(select.el);
+      micSelectSlot.hidden = false;
+    }
+
     function buildSidebar() {
       if (cleanupThemeSelect) {
         cleanupThemeSelect();
         cleanupThemeSelect = null;
       }
+      if (cleanupAudioProgress) {
+        cleanupAudioProgress();
+        cleanupAudioProgress = null;
+      }
+      if (cleanupVolumePopover) {
+        cleanupVolumePopover();
+        cleanupVolumePopover = null;
+      }
       sidebar.innerHTML = '';
+
+      // botões de ícone só (sem rótulo de texto) — mesmo componente de
+      // sempre (createButton), só que sem `label` nenhum de sobra: o ícone
+      // sozinho já é claro (rebobinar/avançar/repetir), igual qualquer
+      // player de música de verdade (ver referência que a Kenji mandou).
+      function iconButton({ icon, ariaLabel, onClick, extraClass = '' }) {
+        const btn = createButton({ label: '', icon, onClick });
+        btn.el.className += ` sound-player-icon-button ${extraClass}`.trimEnd();
+        btn.el.setAttribute('aria-label', ariaLabel);
+        btn.el.querySelector('.control-button-label').remove();
+        return btn;
+      }
+
+      // toda `icon` aqui precisa vir com o <svg> já em volta — createButton
+      // (ui/controls/button.js) só joga a string crua dentro de uma <span>
+      // via innerHTML; um <path>/<rect> sozinho, sem o elemento <svg> pai,
+      // não é um elemento SVG de verdade (o navegador ignora, invisível) —
+      // foi exatamente esse bug na primeira versão daqui (ícones sumidos).
+      function svgIcon(inner) {
+        return `<svg viewBox="0 0 24 24">${inner}</svg>`;
+      }
+
+      let hasFileLoaded = engine.hasSource() && !engine.isMicActive();
 
       const uploadInput = document.createElement('input');
       uploadInput.type = 'file';
@@ -264,14 +333,45 @@ export const soundTilesModule = {
         micButton.el.querySelector('.control-button-label').textContent = t('soundMicButton');
         await engine.loadFile(file);
         updateSourceHint();
-        playButton.el.hidden = false;
-        playButton.el.querySelector('.control-button-label').textContent = t('soundPauseButton');
+        refreshMicSelect();
+        playButton.el.setAttribute('aria-label', t('soundPauseButton'));
+        playButton.el.querySelector('.control-button-icon').innerHTML = PAUSE_ICON;
+        playerBlock.hidden = false;
+        fileNameEl.textContent = engine.getFileName();
+        updatePlayerProgress();
+        hasFileLoaded = true;
+        updateUploadButtonAppearance();
       });
+      // "Enviar áudio" vira "Cancelar" enquanto há um arquivo carregado —
+      // MESMO botão, não dois; clicar cancela em vez de abrir o seletor de
+      // arquivo de novo (só faz sentido enviar um novo depois de tirar o
+      // atual, um clique só nunca faz as duas coisas). No estado
+      // "Cancelar" o botão troca de visual (ver .sound-player-cancel-
+      // button em style.css) pro mesmo tom do cartão azul do player —
+      // sinaliza "isso desfaz o que já foi enviado", não mais uma ação
+      // "principal" tipo enviar de novo.
+      function updateUploadButtonAppearance() {
+        uploadButton.el.querySelector('.control-button-label').textContent = hasFileLoaded
+          ? t('soundCancelButton')
+          : t('soundUploadButton');
+        uploadButton.el.classList.toggle('sound-player-cancel-button', hasFileLoaded);
+      }
       const uploadButton = createButton({
         label: t('soundUploadButton'),
         variant: 'accent2',
-        onClick: () => uploadInput.click(),
+        onClick: () => {
+          if (hasFileLoaded) {
+            engine.clearFile();
+            hasFileLoaded = false;
+            updateUploadButtonAppearance();
+            playerBlock.hidden = true;
+            updateSourceHint();
+            return;
+          }
+          uploadInput.click();
+        },
       });
+      updateUploadButtonAppearance();
 
       micButton = createButton({
         label: t('soundMicButton'),
@@ -282,14 +382,24 @@ export const soundTilesModule = {
             engine.stopMic();
             labelEl.textContent = t('soundMicButton');
             updateSourceHint();
+            refreshMicSelect();
             return;
           }
           try {
             errorMsg.hidden = true;
             await engine.enableMic();
             labelEl.textContent = t('soundMicStopButton');
-            playButton.el.hidden = true;
+            // microfone não tem arquivo/duração/posição pra arrastar nem
+            // volume próprio (é o ambiente, não tem "tocar mais alto") — o
+            // player (nome/progresso/volume) só faz sentido pra uma fonte
+            // 'file', some enquanto o mic estiver ativo. hasFileLoaded some
+            // junto (engine.enableMic já chama clearSource por baixo) — o
+            // botão Enviar áudio volta a dizer isso mesmo, não "Cancelar".
+            hasFileLoaded = false;
+            updateUploadButtonAppearance();
+            playerBlock.hidden = true;
             updateSourceHint();
+            refreshMicSelect();
           } catch (err) {
             errorMsg.textContent = `${t('soundMicError')} (${err?.name || err?.message || err})`;
             errorMsg.hidden = false;
@@ -297,21 +407,248 @@ export const soundTilesModule = {
         },
       });
 
-      playButton = createButton({
-        label: t('soundPauseButton'),
-        onClick: () => {
-          engine.toggleFilePlayback();
-          playButton.el.querySelector('.control-button-label').textContent = engine.isFilePlaying() ? t('soundPauseButton') : t('soundPlayButton');
-        },
-      });
-      playButton.el.hidden = !engine.hasSource() || engine.isMicActive();
-
       const sourceRow = document.createElement('div');
       sourceRow.className = 'vt-source-row';
       sourceRow.appendChild(uploadButton.el);
       sourceRow.appendChild(micButton.el);
-      sourceRow.appendChild(playButton.el);
-      sidebar.appendChild(createSection(t('soundSourceSection'), [sourceRow, uploadInput, errorMsg], { id: 'source' }));
+      micSelectSlot = document.createElement('div');
+      micSelectSlot.hidden = true;
+
+      // player — layout de player de música de verdade (nome da faixa em
+      // cima, barra de progresso com tempo nas PONTAS, transporte com botão
+      // de tocar grande no centro), dentro de um cartão próprio (ver
+      // .sound-player em style.css) que engloba tudo visualmente, separado
+      // da fileira Enviar/Ativar. Só existe (visível) enquanto a fonte é um
+      // ARQUIVO enviado, nunca com o microfone.
+      const fileNameEl = document.createElement('div');
+      fileNameEl.className = 'sound-player-title';
+      fileNameEl.textContent = engine.getFileName();
+
+      // slider trabalha em FRAÇÃO (0-1), não segundos — a duração real só
+      // fica disponível depois de 'loadedmetadata' (às vezes depois do
+      // slider já criado), e createSlider não permite mudar min/max depois
+      // de criado; fração evita esse problema por completo (nunca precisa
+      // mudar o teto). Rótulo/caixinha de valor escondidos (ver hideLabel/
+      // hideValueBox em ui/controls/slider.js) — o tempo aparece nas PONTAS
+      // da trilha (timeCurrentEl/timeDurationEl), não como um label+valor
+      // de slider comum.
+      let playerCurrentSec = 0;
+      let playerDurationSec = 0;
+      const progressSlider = createSlider({
+        label: t('soundProgressLabel'),
+        min: 0,
+        max: 1,
+        step: 0.001,
+        value: 0,
+        formatValue: () => '',
+        hideLabel: true,
+        hideValueBox: true,
+        onChange: (fraction) => engine.seekTo(fraction * engine.getDuration()),
+      });
+
+      const timeCurrentEl = document.createElement('span');
+      timeCurrentEl.className = 'sound-player-time';
+      const timeDurationEl = document.createElement('span');
+      timeDurationEl.className = 'sound-player-time';
+
+      const progressRow = document.createElement('div');
+      progressRow.className = 'sound-player-progress';
+      progressRow.appendChild(timeCurrentEl);
+      progressRow.appendChild(progressSlider.el);
+      progressRow.appendChild(timeDurationEl);
+
+      function updatePlayerProgress() {
+        playerDurationSec = engine.getDuration();
+        playerCurrentSec = engine.getCurrentTime();
+        progressSlider.value = playerDurationSec > 0 ? playerCurrentSec / playerDurationSec : 0;
+        timeCurrentEl.textContent = formatSeconds(playerCurrentSec * 1000);
+        timeDurationEl.textContent = formatSeconds(playerDurationSec * 1000);
+      }
+      cleanupAudioProgress = engine.onAudioProgress(updatePlayerProgress);
+
+      // rebobinar/avançar 15s — o "skip 15" clássico de qualquer player de
+      // podcast/música: seta circular com o número dentro, não uma seta
+      // dupla genérica.
+      function skip15Icon({ mirrored }) {
+        const arrow = mirrored
+          ? '<path d="M12 5V2L7 6l5 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z" fill="currentColor"/>'
+          : '<path d="M12 5V2L17 6l-5 4V7a5 5 0 1 0 5 5H19a7 7 0 1 1-7-7z" fill="currentColor"/>';
+        return svgIcon(
+          `${arrow}<text x="12" y="16.5" font-size="7.5" font-weight="700" text-anchor="middle" fill="currentColor">15</text>`
+        );
+      }
+
+      const rewindButton = iconButton({
+        icon: skip15Icon({ mirrored: true }),
+        ariaLabel: t('soundRewindButton'),
+        onClick: () => engine.seekTo(Math.max(0, engine.getCurrentTime() - 15)),
+      });
+
+      const forwardButton = iconButton({
+        icon: skip15Icon({ mirrored: false }),
+        ariaLabel: t('soundForwardButton'),
+        onClick: () => engine.seekTo(Math.min(engine.getDuration(), engine.getCurrentTime() + 15)),
+      });
+
+      const PLAY_ICON = svgIcon('<path d="M8 5v14l11-7z" fill="currentColor"/>');
+      const PAUSE_ICON = svgIcon(
+        '<rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"/>'
+      );
+      playButton = iconButton({
+        icon: engine.isFilePlaying() ? PAUSE_ICON : PLAY_ICON,
+        ariaLabel: t('soundPauseButton'),
+        extraClass: 'sound-player-play-button',
+        onClick: () => {
+          engine.toggleFilePlayback();
+          const playing = engine.isFilePlaying();
+          playButton.el.setAttribute('aria-label', playing ? t('soundPauseButton') : t('soundPlayButton'));
+          playButton.el.querySelector('.control-button-icon').innerHTML = playing ? PAUSE_ICON : PLAY_ICON;
+        },
+      });
+
+      // repetir — alterna audio.loop (padrão ligado, ver engine.js); estado
+      // ativo marcado por cor (.sound-player-icon-button.active), não por
+      // texto (o botão não tem rótulo nenhum). Fica na PONTA ESQUERDA da
+      // fileira (position:absolute, ver .sound-player-repeat em style.css)
+      // — espelhando o volume na ponta direita, já que o grupo central
+      // (voltar/tocar/avançar) sozinho deixava aquele lado vazio à toa.
+      const repeatButton = iconButton({
+        icon: svgIcon(
+          '<path d="M17 2l4 4-4 4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 11V9a4 4 0 0 1 4-4h14" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 22l-4-4 4-4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 13v2a4 4 0 0 1-4 4H3" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
+        ),
+        ariaLabel: t('soundRepeatButton'),
+        extraClass: 'sound-player-repeat',
+        onClick: () => {
+          engine.setLoop(!engine.getLoop());
+          repeatButton.el.classList.toggle('active', engine.getLoop());
+        },
+      });
+      repeatButton.el.classList.toggle('active', engine.getLoop());
+
+      // volume — NÃO é mais um slider horizontal gigante sempre visível: é
+      // um botão de alto-falante que abre um popover flutuante com um
+      // FADER VERTICAL comprido do lado (ver createSlider orientation:
+      // 'vertical'), igual volume de player de música/mesa de som de
+      // verdade. Sem rótulo "Volume" nem caixinha de porcentagem — só o
+      // fader (ver hideLabel/hideValueBox). O botão de alto-falante DENTRO
+      // do popover (não o de fora, que só abre/fecha) muta/desmuta.
+      const MUTE_ICON = svgIcon(
+        '<path d="M4 9v6h4l5 5V4L8 9H4z" fill="currentColor"/><path d="M16 9l6 6M22 9l-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'
+      );
+      const VOLUME_ICON = svgIcon(
+        '<path d="M4 9v6h4l5 5V4L8 9H4z" fill="currentColor"/><path d="M16.5 8.5a5 5 0 0 1 0 7" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/><path d="M19 6a8.5 8.5 0 0 1 0 12" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/>'
+      );
+
+      const volumeSlider = createSlider({
+        label: t('soundVolumeLabel'),
+        min: 0,
+        max: 100,
+        step: 1,
+        value: Math.round((engine.getVolume() ?? 1) * 100),
+        formatValue: (v) => `${v}%`,
+        hideLabel: true,
+        hideValueBox: true,
+        orientation: 'vertical',
+        onChange: (v) => {
+          engine.setVolume(v / 100);
+          muteButton.el.querySelector('.control-button-icon').innerHTML = v > 0 ? VOLUME_ICON : MUTE_ICON;
+        },
+      });
+
+      let volumeBeforeMute = engine.getVolume() || 1;
+      const muteButton = iconButton({
+        icon: engine.getVolume() > 0 ? VOLUME_ICON : MUTE_ICON,
+        ariaLabel: t('soundVolumeButton'),
+        extraClass: 'sound-player-mute-button',
+        onClick: () => {
+          const muting = engine.getVolume() > 0;
+          if (muting) volumeBeforeMute = engine.getVolume();
+          const next = muting ? 0 : volumeBeforeMute || 1;
+          engine.setVolume(next);
+          volumeSlider.value = Math.round(next * 100);
+          muteButton.el.querySelector('.control-button-icon').innerHTML = next > 0 ? VOLUME_ICON : MUTE_ICON;
+        },
+      });
+
+      const volumePopover = document.createElement('div');
+      volumePopover.className = 'sound-player-volume-popover';
+      volumePopover.appendChild(muteButton.el);
+      volumePopover.appendChild(volumeSlider.el);
+      volumePopover.hidden = true;
+
+      let closeVolumePopoverOnOutsideClick = null;
+      function closeVolumePopover() {
+        volumePopover.hidden = true;
+        if (closeVolumePopoverOnOutsideClick) {
+          document.removeEventListener('pointerdown', closeVolumePopoverOnOutsideClick);
+          closeVolumePopoverOnOutsideClick = null;
+        }
+      }
+      // guardado no nível de módulo (ver cleanupVolumePopover no topo do
+      // arquivo) — sem isso, reconstruir a sidebar (troca de idioma, tema
+      // etc.) enquanto o popover está aberto deixava um listener de
+      // 'pointerdown' órfão no document, referenciando nós já removidos.
+      cleanupVolumePopover = closeVolumePopover;
+      const volumeWrap = document.createElement('div');
+      volumeWrap.className = 'sound-player-volume';
+      const volumeButton = iconButton({
+        icon: VOLUME_ICON,
+        ariaLabel: t('soundVolumeButton'),
+        onClick: () => {
+          if (!volumePopover.hidden) {
+            closeVolumePopover();
+            return;
+          }
+          volumePopover.hidden = false;
+          // fecha ao clicar fora — registrado só enquanto aberto (não um
+          // listener permanente no documento a troca de aba toda).
+          closeVolumePopoverOnOutsideClick = (e) => {
+            if (!volumeWrap.contains(e.target)) closeVolumePopover();
+          };
+          // setTimeout 0: o MESMO clique que abriu o popover não pode
+          // também ser lido como "clique fora" pelo listener que acabou de
+          // ser registrado (pointerdown já disparou, mas o listener só
+          // entra depois desse handler terminar — sem o atraso, tudo bem
+          // na prática, mas o 0ms aqui deixa a intenção explícita).
+          setTimeout(() => document.addEventListener('pointerdown', closeVolumePopoverOnOutsideClick), 0);
+        },
+      });
+      volumeWrap.appendChild(volumeButton.el);
+      volumeWrap.appendChild(volumePopover);
+
+      // grupo central (voltar/tocar/avançar) — mesma proporção nos 3;
+      // repetir e volume ficam FORA do grupo, cada um na sua ponta (ver
+      // .sound-player-repeat/.sound-player-volume em style.css), não
+      // disputando espaço com o trio central.
+      const playerCenterGroup = document.createElement('div');
+      playerCenterGroup.className = 'sound-player-center-group';
+      playerCenterGroup.appendChild(rewindButton.el);
+      playerCenterGroup.appendChild(playButton.el);
+      playerCenterGroup.appendChild(forwardButton.el);
+
+      const playerTransportRow = document.createElement('div');
+      playerTransportRow.className = 'sound-player-transport';
+      playerTransportRow.appendChild(repeatButton.el);
+      playerTransportRow.appendChild(playerCenterGroup);
+      playerTransportRow.appendChild(volumeWrap);
+
+      const playerBlock = document.createElement('div');
+      playerBlock.className = 'sound-player';
+      playerBlock.appendChild(fileNameEl);
+      playerBlock.appendChild(progressRow);
+      playerBlock.appendChild(playerTransportRow);
+      playerBlock.hidden = !hasFileLoaded;
+      updatePlayerProgress();
+
+      sidebar.appendChild(
+        createSection(t('soundSourceSection'), [sourceRow, micSelectSlot, uploadInput, errorMsg, playerBlock], {
+          id: 'source',
+        })
+      );
+      // reconstrói o seletor de microfones a cada rebuild da sidebar também
+      // (troca de idioma, tema...) — mesmo padrão do refreshCameraSelect no
+      // Espelho.
+      refreshMicSelect();
 
       const framePicker = createFrameTilePicker({
         options: frameOptions(),
@@ -738,6 +1075,14 @@ export const soundTilesModule = {
     if (cleanupThemeSelect) {
       cleanupThemeSelect();
       cleanupThemeSelect = null;
+    }
+    if (cleanupAudioProgress) {
+      cleanupAudioProgress();
+      cleanupAudioProgress = null;
+    }
+    if (cleanupVolumePopover) {
+      cleanupVolumePopover();
+      cleanupVolumePopover = null;
     }
     if (cleanupLang) {
       cleanupLang();

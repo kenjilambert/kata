@@ -107,6 +107,8 @@ export function createSoundTilesEngine(outputCanvas) {
   let micStream = null;
   let sourceUrl = null;
   let activeSource = null; // 'file' | 'mic' | null
+  let currentFileName = '';
+  let activeMicDeviceId = null;
 
   let rafId = null;
   let paused = false;
@@ -224,6 +226,7 @@ export function createSoundTilesEngine(outputCanvas) {
       micStream.getTracks().forEach((t) => t.stop());
       micStream = null;
     }
+    activeMicDeviceId = null;
   }
 
   function clearSource() {
@@ -234,6 +237,7 @@ export function createSoundTilesEngine(outputCanvas) {
       sourceUrl = null;
     }
     activeSource = null;
+    currentFileName = '';
   }
 
   function loadFile(file) {
@@ -242,6 +246,7 @@ export function createSoundTilesEngine(outputCanvas) {
     if (sourceUrl) URL.revokeObjectURL(sourceUrl);
     sourceUrl = URL.createObjectURL(file);
     audio.src = sourceUrl;
+    currentFileName = file.name || '';
     // só pode ser criado UMA VEZ pro mesmo elemento <audio> — reaproveitado
     // entre arquivos diferentes (trocar audio.src não invalida o node já
     // criado, ele continua captando o que quer que esteja tocando agora).
@@ -254,12 +259,59 @@ export function createSoundTilesEngine(outputCanvas) {
     return audio.play().then(() => audioCtx.resume());
   }
 
-  async function enableMic() {
+  // --- controles do player (progresso/volume) ----------------------------
+  // só fazem sentido pra fonte 'file' (o microfone não tem duração/posição
+  // pra arrastar, nem volume — é o próprio ambiente, não tem "tocar mais
+  // alto"). getDuration pode voltar NaN antes do metadata carregar — quem
+  // usa isso (index.js) já trata isso mostrando 0 até o 'loadedmetadata'.
+  function getFileName() {
+    return currentFileName;
+  }
+  function getCurrentTime() {
+    return audio.currentTime || 0;
+  }
+  function getDuration() {
+    return Number.isFinite(audio.duration) ? audio.duration : 0;
+  }
+  function seekTo(time) {
+    if (activeSource !== 'file') return;
+    audio.currentTime = Math.max(0, Math.min(getDuration() || time, time));
+  }
+  function setVolume(v) {
+    audio.volume = Math.max(0, Math.min(1, v));
+  }
+  function getVolume() {
+    return audio.volume;
+  }
+  function setLoop(value) {
+    audio.loop = value;
+  }
+  function getLoop() {
+    return audio.loop;
+  }
+  // 'timeupdate' sozinho já cobre a barra andando durante a reprodução;
+  // 'loadedmetadata' é o único jeito de saber a duração assim que ela fica
+  // disponível (às vezes só depois do play já ter começado) sem esperar o
+  // primeiro tick de 'timeupdate'. Devolve a função de limpeza (padrão do
+  // projeto pra listener registrado sob demanda, ver cleanupResize em
+  // index.js) — quem chama guarda e roda no unmount.
+  function onAudioProgress(cb) {
+    audio.addEventListener('timeupdate', cb);
+    audio.addEventListener('loadedmetadata', cb);
+    return () => {
+      audio.removeEventListener('timeupdate', cb);
+      audio.removeEventListener('loadedmetadata', cb);
+    };
+  }
+
+  async function enableMic(deviceId) {
     ensureAudioGraph();
     clearSource();
     // erro (permissão negada, sem microfone...) é responsabilidade de quem
     // chamou tratar — mesma decisão do enableWebcam do Espelho.
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    const audioConstraints = deviceId ? { deviceId: { exact: deviceId } } : true;
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints, video: false });
+    activeMicDeviceId = deviceId ?? micStream.getAudioTracks()[0]?.getSettings?.().deviceId ?? null;
     micSourceNode = audioCtx.createMediaStreamSource(micStream);
     // NUNCA conectado a audioCtx.destination — ligar o microfone direto na
     // saída criaria um eco/feedback imediato (a pessoa ouvindo a própria
@@ -273,6 +325,16 @@ export function createSoundTilesEngine(outputCanvas) {
     if (activeSource !== 'mic') return;
     disconnectMic();
     activeSource = null;
+  }
+
+  // enumerateDevices() só devolve label/deviceId de verdade DEPOIS de já
+  // ter tido permissão de microfone concedida uma vez nesta sessão — mesma
+  // regra do listCameras do Espelho (video-tiles/engine.js), só que pra
+  // 'audioinput' em vez de 'videoinput'.
+  async function listMics() {
+    if (!navigator.mediaDevices?.enumerateDevices) return [];
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices.filter((d) => d.kind === 'audioinput');
   }
 
   function hasSource() {
@@ -525,9 +587,24 @@ export function createSoundTilesEngine(outputCanvas) {
     enableMic,
     stopMic,
     isMicActive,
+    listMics,
+    getActiveMicDeviceId: () => activeMicDeviceId,
     hasSource,
     isFilePlaying,
     toggleFilePlayback,
+    getFileName,
+    getCurrentTime,
+    getDuration,
+    seekTo,
+    setVolume,
+    getVolume,
+    setLoop,
+    getLoop,
+    onAudioProgress,
+    // "Cancelar" o arquivo carregado (botão Enviar áudio vira Cancelar
+    // enquanto há um arquivo — ver sound-tiles/index.js) — reaproveita a
+    // MESMA limpeza que já existe pra quando o microfone assume a fonte.
+    clearFile: clearSource,
     setPaused: (value) => { paused = value; },
     isPaused: () => paused,
     start,
