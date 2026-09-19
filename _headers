@@ -7,7 +7,75 @@
   Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'self'
 
 # fontes auto-hospedadas nunca mudam de conteúdo sem mudar de nome —
-# cache de 1 ano, sem revalidar (o resto do site continua must-revalidate,
-# padrão do Cloudflare Pages, porque os .js não têm hash no nome).
+# cache de 1 ano, sem revalidar.
 /fonts/*
   Cache-Control: public, max-age=31536000, immutable
+
+# tudo sob /src é referenciado SEMPRE com ?v=HASH do conteúdo (import map +
+# modulepreload + asset-versions.js, gerados por tools/build-assets.py) —
+# mudou o arquivo, muda a URL, então a URL antiga pode ficar em cache pra
+# sempre. O index.html (que aponta pras versões certas) continua no padrão
+# must-revalidate do Cloudflare Pages.
+/src/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# o navegador precisa ver o sw.js novo logo depois de um deploy (é ele que
+# sabe qual versão do cache é a atual); o manifest, idem, é lido direto sem
+# hash na URL.
+/sw.js
+  Cache-Control: no-cache
+/manifest.json
+  Cache-Control: no-cache
+
+# Cadeia dos Web Workers (gerada por tools/build-assets.py — não editar
+# entre os marcadores): esses arquivos chegam sem ?v= dentro do worker, então
+# NÃO podem ser imutáveis. Ver comentário no script.
+# assets:worker-chain:start
+/src/core/gifEncoder.js
+  ! Cache-Control
+  Cache-Control: public, max-age=0, must-revalidate
+
+/src/core/imageSampling.js
+  ! Cache-Control
+  Cache-Control: public, max-age=0, must-revalidate
+
+/src/core/seed.js
+  ! Cache-Control
+  Cache-Control: public, max-age=0, must-revalidate
+
+/src/modules/gradient-tiles/draw.js
+  ! Cache-Control
+  Cache-Control: public, max-age=0, must-revalidate
+
+/src/modules/gradient-tiles/render.worker.js
+  ! Cache-Control
+  Cache-Control: public, max-age=0, must-revalidate
+
+/src/modules/gradient-tiles/runtime.js
+  ! Cache-Control
+  Cache-Control: public, max-age=0, must-revalidate
+
+/src/modules/grid-icons/shapes.js
+  ! Cache-Control
+  Cache-Control: public, max-age=0, must-revalidate
+
+/src/modules/sound-tiles/draw.js
+  ! Cache-Control
+  Cache-Control: public, max-age=0, must-revalidate
+
+/src/modules/sound-tiles/render.worker.js
+  ! Cache-Control
+  Cache-Control: public, max-age=0, must-revalidate
+
+/src/modules/sound-tiles/runtime.js
+  ! Cache-Control
+  Cache-Control: public, max-age=0, must-revalidate
+
+/src/modules/video-tiles/offscreen.js
+  ! Cache-Control
+  Cache-Control: public, max-age=0, must-revalidate
+
+/src/modules/video-tiles/shapes.js
+  ! Cache-Control
+  Cache-Control: public, max-age=0, must-revalidate
+# assets:worker-chain:end

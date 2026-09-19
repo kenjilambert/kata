@@ -2,8 +2,25 @@ import { createModuleSwitcher } from './ui/module-switcher.js';
 import { initCustomCursor } from './ui/customCursor.js';
 import { renderDynamicLogo, renderSoundLogo } from './ui/dynamicLogo.js';
 import { t, getLang, setLang, onLangChange, AVAILABLE_LANGS } from './core/i18n.js';
+import { showToast } from './ui/toast.js';
 
 initCustomCursor();
+
+// erro que ninguém tratou (exceção solta, promise rejeitada) — além do
+// console, mostra UM aviso genérico na tela pra pessoa saber que algo falhou
+// e o que fazer, em vez de um botão que "não fez nada". Limitado a 1 aviso
+// a cada 8s: um erro em loop (ex.: dentro de um requestAnimationFrame) não
+// pode virar chuva de toast.
+let lastGlobalErrorToastAt = 0;
+function reportUnhandledError(err) {
+  console.error(err);
+  const now = Date.now();
+  if (now - lastGlobalErrorToastAt < 8000) return;
+  lastGlobalErrorToastAt = now;
+  showToast(t('unexpectedErrorToast'), { kind: 'error', duration: 7000 });
+}
+window.addEventListener('error', (e) => reportUnhandledError(e.error ?? e.message));
+window.addEventListener('unhandledrejection', (e) => reportUnhandledError(e.reason));
 
 // Módulos carregados SOB DEMANDA (import() dinâmico) — só o código da aba
 // que a pessoa está olhando desce na primeira visita. Antes, os 5 módulos
@@ -129,3 +146,18 @@ onLangChange(renderLangSwitcher);
 const app = document.getElementById('app');
 const moduleTabsSlot = document.getElementById('module-tabs-slot');
 createModuleSwitcher(app, MODULES, moduleTabsSlot, { onActivate: updateLogoAndFavicon });
+
+// Service worker (ver sw.js): offline + cache-first do que tem ?v=. Só em
+// produção — no dev (`py -m http.server`) um SW servindo do cache é
+// exatamente o "navegador insiste em versão antiga" que o README já avisa,
+// e o hash do build não é rodado a cada edição. Registrado depois do `load`
+// pra não competir com a carga inicial pela rede.
+const isLocalDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+if ('serviceWorker' in navigator && !isLocalDev) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => {
+      // falhar aqui não pode derrubar o site — só perde o offline.
+      console.warn('Kata: service worker não registrado', err);
+    });
+  });
+}

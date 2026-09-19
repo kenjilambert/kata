@@ -5,8 +5,18 @@
 // só a LÓGICA de carregar/aplicar um tema virou compartilhada.
 import { PRESETS, clonePreset } from './palette.js';
 import { patternState } from './patternState.js';
+import { ASSET_VERSIONS } from '../generated/asset-versions.js';
 
+// fetch() NÃO passa pelo import map (só import/import() passam), então o
+// ?v= do themes.json é montado aqui na mão, com o hash que
+// tools/build-assets.py gravou em generated/asset-versions.js — sem isso o
+// .json cairia no Cache-Control immutable de /src/* (ver _headers) sem ter
+// como invalidar. import.meta.url já vem com ?v= do próprio themes.js;
+// new URL() com caminho novo descarta essa query, e a chave do objeto é o
+// pathname puro (o site vive na raiz, então bate com "/src/...").
 const THEMES_URL = new URL('../modules/grid-icons/themes.json', import.meta.url);
+const themesVersion = ASSET_VERSIONS[THEMES_URL.pathname];
+if (themesVersion) THEMES_URL.searchParams.set('v', themesVersion);
 
 // "Limpo" não é um tema visual como os outros (não tem curadoria de
 // cor/forma/simetria) — é o ponto de partida zerado, por isso vive aqui

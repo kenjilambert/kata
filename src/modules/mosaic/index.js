@@ -1,4 +1,5 @@
 import { t, onLangChange } from '../../core/i18n.js';
+import { showError } from '../../ui/toast.js';
 import { createSlider } from '../../ui/controls/slider.js';
 import { createSelect } from '../../ui/controls/select.js';
 import { createIconSelect } from '../../ui/controls/iconSelect.js';
@@ -298,6 +299,7 @@ export const mosaicModule = {
       try {
         asset = await loadImageAsset(blob);
       } catch (err) {
+        showError('imageLoadErrorToast', err);
         return;
       }
       if (state.maskImageUrl) URL.revokeObjectURL(state.maskImageUrl);

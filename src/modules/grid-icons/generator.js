@@ -2,6 +2,7 @@ import { createRng } from '../../core/seed.js';
 import { pickWeighted } from '../../core/palette.js';
 import { generateSymmetricGrid } from '../../core/symmetry.js';
 import { nearestPaletteColor } from '../../core/imageSampling.js';
+import { contrastRatio } from '../../core/color.js';
 import { buildGrainFilterMarkup } from '../../core/textures.js';
 import { SHAPES, shapeCoversEdge } from './shapes.js';
 
@@ -178,6 +179,7 @@ export function buildIconGrid({
   densityGradient = 'none',
   gradientDirection = 'left-to-right',
   gradientStrength = 0.6,
+  colorRules = true,
 }) {
   // cols/rows (opcionais) permitem uma grade RETANGULAR — usada só pelo
   // "quadro" de exportação não-quadrado (ver buildFramedIconGrid mais
@@ -244,9 +246,84 @@ export function buildIconGrid({
     return { shapeKey, orientation };
   }
 
-  function pickColorFor(r, c) {
-    if (imageGuide) return resolveCellColor(nearestPaletteColor(imageGuide.grid[r][c], colors));
-    return resolveCellColor(pickWeighted(rng, colors));
+  // --- regras de cor (colorRules) ---------------------------------------
+  // Duas regras leves em cima do sorteio ponderado, pra composição sair
+  // menos "aleatória": (a) evitar a mesma cor em vizinho ortogonal já
+  // pintado; (b) evitar cor quase invisível contra o fundo. As duas SÓ
+  // re-sorteiam com o MESMO rng da geração (nunca Math.random), com um
+  // número limitado de tentativas e aceitando o resultado se todas falharem
+  // — então mesma seed + parâmetros → mesma saída, sempre. Também rodam
+  // sobre a cor CRUA sorteada, antes de resolveCellColor (silhueta/inverter):
+  // a silhueta ignora a cor, mas se o número de chamadas ao rng dependesse
+  // de silhueta estar ligada ou não, ligar "ícone preto" mudaria a
+  // ESTRUTURA do ícone (formas/vazios), não só a cor — e não deve.
+  //
+  // Vizinhos: só o que já foi pintado NESTA geração até aqui, guardado por
+  // "r,c" — com simetria, cellFactory só roda na região-semente (varredura
+  // em ordem de linha), então o vizinho de cima/da esquerda já existe e o
+  // de baixo/da direita ainda não; as cópias espelhadas/giradas são
+  // derivadas depois (symmetry.js) e não entram aqui de propósito — a
+  // regra nunca pode "ver" uma cópia, senão a região-semente dependeria do
+  // próprio reflexo e a replicação quebraria. Efeito colateral aceito: na
+  // linha do eixo de espelho as duas cópias encostadas têm a mesma cor.
+  // Célula subdividida não tem "uma cor" — não é registrada; suas
+  // sub-células checam entre si (irmãs ortogonais já pintadas) e contra os
+  // vizinhos de nível de cima da célula-mãe.
+  const paintedColors = new Map();
+  const distinctPaletteColors = new Set(colors.map((entry) => entry.color)).size;
+  const paletteContrast = colors.map((entry) => contrastRatio(entry.color, background));
+  const bestPaletteContrast = paletteContrast.reduce((best, ratio) => (Number.isNaN(ratio) ? best : Math.max(best, ratio)), 0);
+  const NEIGHBOR_RETRIES = 3;
+  const MIN_CONTRAST = 1.4;
+  const ORTHO = [
+    [-1, 0],
+    [1, 0],
+    [0, -1],
+    [0, 1],
+  ];
+  const SUB_NEIGHBORS = { tl: ['tr', 'bl'], tr: ['tl', 'br'], br: ['tr', 'bl'], bl: ['tl', 'br'] };
+
+  function neighborRawColors(r, c, siblingColors) {
+    const found = new Set(siblingColors || []);
+    for (const [dr, dc] of ORTHO) {
+      const color = paintedColors.get(`${r + dr},${c + dc}`);
+      if (color != null) found.add(color);
+    }
+    return found;
+  }
+
+  // sorteio cru (sem resolveCellColor) já passado pelas regras. siblingColors:
+  // cores cruas das sub-células irmãs ortogonais já pintadas (caso subdividido).
+  function pickRawColor(r, c, siblingColors) {
+    let picked = pickWeighted(rng, colors);
+    if (!colorRules) return picked;
+
+    if (distinctPaletteColors >= 3) {
+      const taken = neighborRawColors(r, c, siblingColors);
+      for (let attempt = 0; attempt < NEIGHBOR_RETRIES && taken.has(picked); attempt++) {
+        picked = pickWeighted(rng, colors);
+      }
+    }
+
+    // (b) contraste: 1 re-sorteio se a cor mal se destaca do fundo E existe
+    // alternativa melhor na paleta (se TODA a paleta é apagada contra o
+    // fundo, re-sortear não resolve nada — só gastaria rng à toa).
+    const ratio = contrastRatio(picked, background);
+    if (!Number.isNaN(ratio) && ratio < MIN_CONTRAST && bestPaletteContrast > ratio) {
+      picked = pickWeighted(rng, colors);
+    }
+    return picked;
+  }
+
+  // Devolve { color, raw }: color é o que vai pra célula (já resolvido por
+  // silhueta/inverter), raw a cor da paleta de fato sorteada (o que as
+  // regras de vizinhança comparam). `record` grava a raw como "pintada" em
+  // (r,c) — só pra célula de nível de cima com forma única.
+  function pickColorFor(r, c, { record = true, siblingColors = null } = {}) {
+    // modo imagem-guia: cor vem da imagem, sem sorteio nem regras
+    const raw = imageGuide ? nearestPaletteColor(imageGuide.grid[r][c], colors) : pickRawColor(r, c, siblingColors);
+    if (record) paintedColors.set(`${r},${c}`, raw);
+    return { color: resolveCellColor(raw), raw };
   }
 
   function isFilled(r, c) {
@@ -264,19 +341,23 @@ export function buildIconGrid({
 
     if (effectiveSubdivision > 0 && rng() < effectiveSubdivision) {
       const subCells = {};
+      const subRaw = {};
       for (const corner of ALL_CORNERS) {
         if (rng() > fillDensity) {
           subCells[corner] = { shape: 'blank' };
           continue;
         }
         const { shapeKey, orientation } = pickShapeAndOrientation(ring, r, c);
-        subCells[corner] = { shape: shapeKey, orientation, color: pickColorFor(r, c) };
+        const siblingColors = SUB_NEIGHBORS[corner].map((k) => subRaw[k]).filter((v) => v != null);
+        const { color, raw } = pickColorFor(r, c, { record: false, siblingColors });
+        subRaw[corner] = raw;
+        subCells[corner] = { shape: shapeKey, orientation, color };
       }
       return { shape: 'subdivided', subCells };
     }
 
     const { shapeKey, orientation } = pickShapeAndOrientation(ring, r, c);
-    return { shape: shapeKey, orientation, color: pickColorFor(r, c) };
+    return { shape: shapeKey, orientation, color: pickColorFor(r, c).color };
   }
 
   let grid;
@@ -306,7 +387,7 @@ export function buildIconGrid({
           if (r === 0 && c === 0) continue; // célula-semente original, mantém
           const cell = grid[r][c];
           if (cell.shape !== 'blank' && cell.shape !== 'subdivided') {
-            grid[r][c] = { ...cell, color: pickColorFor(r, c) };
+            grid[r][c] = { ...cell, color: pickColorFor(r, c).color };
           }
         }
       }

@@ -1,97 +1,30 @@
-// Motor do modo Som: MESMA lógica de desenho do Espelho (video-tiles/engine.js
-// — forma fixa por célula, tamanho/cor reagindo a um valor 0-1 por célula,
-// GIF/vídeo gravados do próprio canvas de saída) só que a fonte do valor por
-// célula não é luminância de um quadro de vídeo — é a MAGNITUDE de uma faixa
-// de frequência do áudio (Web Audio API AnalyserNode).
+// Motor do modo Som: MESMA lógica de desenho do Espelho (video-tiles) —
+// forma fixa por célula, tamanho/cor reagindo a um valor 0-1 por célula,
+// GIF/vídeo gravados do próprio canvas de saída — só que a fonte do valor
+// por célula não é luminância de um quadro de vídeo — é a MAGNITUDE de uma
+// faixa de frequência do áudio (Web Audio API AnalyserNode). O desenho em
+// si (espectrômetro parado, attack/release etc.) está comentado em draw.js.
 //
-// NÃO é um espectrograma rolando o histórico (1ª versão, corrigida) — é um
-// espectrômetro PARADO, tipo equalizador de rádio/hi-fi: cada banda de
-// frequência tem uma posição FIXA na grade (uma "barra"), e só a ALTURA
-// dessa barra reage ao som agora, subindo/descendo no lugar — igual a
-// qualquer visualizador de áudio clássico (ver referência mandada na
-// conversa). "Ataque rápido, decaimento lento" (attack/release, ver
-// ATTACK/RELEASE abaixo) é o que dá aquele movimento "vivo" — sem isso a
-// barra pisca crua a cada quadro em vez de subir na hora e descer suave.
-import { createRng, randomSeed } from '../../core/seed.js';
-import { nearestPaletteColor } from '../../core/imageSampling.js';
-import { encodeGif } from '../../core/gifEncoder.js';
+// Onde cada coisa roda:
+//   - main thread (sempre): AudioContext/AnalyserNode/microfone (Web Audio
+//     não existe em worker), o laço de rAF que lê o espectro a cada quadro,
+//     agrupa em bandas e suaviza (`levels`), e o MediaRecorder da gravação.
+//   - Web Worker + OffscreenCanvas (quando o navegador suporta): a pintura
+//     da grade — a parte cara (até 96×96 formas por quadro) — e a
+//     codificação do GIF. A cada quadro só atravessa um Float32Array com uma
+//     entrada por barra (transferido), e volta um ImageBitmap pronto (ver
+//     offscreen.js).
+//   - fallback na main thread (como sempre foi): sem OffscreenCanvas/Worker,
+//     ou com localStorage.KATA_FORCE_MAIN_THREAD = '1' (depuração).
+// Os dois caminhos usam o MESMO runtime.js/draw.js; a API pública deste
+// objeto é idêntica nos dois.
+import { randomSeed } from '../../core/seed.js';
 import { framedGridDims } from '../grid-icons/generator.js';
-import { drawVideoShape, VIDEO_SHAPES } from '../video-tiles/shapes.js';
-
-const GIF_MAX_DIM = 360;
-const GIF_FPS = 12;
-const GIF_MAX_SECONDS = 8;
-const OUTPUT_MAX_DIM = 900;
-
-// teto/piso do lado maior do canvas de saída no formato "Tela cheia" (ver
-// gradient-tiles/engine.js, mesma função) — a caixa medida na tela pode ser
-// bem maior ou menor que OUTPUT_MAX_DIM, mas sem deixar o canvas virar
-// gigante (custo de redesenhar cresce com a área) nem minúsculo demais.
-function clampOutputDim(requested) {
-  if (!requested) return OUTPUT_MAX_DIM;
-  return Math.max(480, Math.min(1400, Math.round(requested)));
-}
-// teto de quadros/s do próprio DESENHO (não da análise de áudio, que
-// acompanha o hardware) — rAF livre roda a 60fps sem necessidade nenhuma
-// pra esse efeito (o ouvido/olho não percebe diferença acima disso), e
-// cada quadro a menos é uma grade cols×rows inteira a menos pra redesenhar.
-const RENDER_MIN_DT = 1000 / 30;
-
-function hexToRgb(hex) {
-  const n = parseInt(hex.replace('#', ''), 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-}
-
-// idêntica à do Espelho (video-tiles/engine.js) — duplicada de propósito,
-// não importada: cada motor é autocontido (mesma convenção já usada entre
-// Espelho/Gradiente), evita um acoplamento cruzado só por causa de uma
-// função pequena.
-function interpolateGradient(t, colors) {
-  if (!colors.length) return '#000000';
-  if (colors.length === 1) return colors[0].color;
-  const clamped = Math.min(1, Math.max(0, t));
-  const scaled = clamped * (colors.length - 1);
-  const i = Math.min(colors.length - 2, Math.floor(scaled));
-  const frac = scaled - i;
-  const [r1, g1, b1] = hexToRgb(colors[i].color);
-  const [r2, g2, b2] = hexToRgb(colors[i + 1].color);
-  const r = Math.round(r1 + (r2 - r1) * frac);
-  const g = Math.round(g1 + (g2 - g1) * frac);
-  const b = Math.round(b1 + (b2 - b1) * frac);
-  return `rgb(${r}, ${g}, ${b})`;
-}
-
-function computeOutputSize(cols, rows, maxDim) {
-  if (cols >= rows) {
-    return { width: maxDim, height: Math.max(1, Math.round((maxDim * rows) / cols)) };
-  }
-  return { width: Math.max(1, Math.round((maxDim * cols) / rows)), height: maxDim };
-}
-
-const CORNERS = ['tl', 'tr', 'br', 'bl'];
-
-// idêntico em espírito ao remapSampleCoord do Espelho (video-tiles/engine.js)
-// — só mirror-h/mirror-full aqui (sem 'rotational': um eixo é frequência e
-// o outro é altura da barra, então girar 90° trocaria banda por altura, o
-// que não faz sentido nenhum pro efeito). "mirror-h" aqui é o clássico
-// visualizador simétrico (grave no centro, agudo pras 2 pontas, ou o
-// inverso) — espelha de onde vem a ALTURA da barra, não a forma/orientação
-// da célula (essas continuam fixas, ver rebuildCellShapesIfNeeded).
-function remapGridCoord(r, c, cols, rows, symmetry) {
-  if (symmetry === 'none') return [r, c];
-  const hc = Math.floor(cols / 2);
-  const hr = Math.floor(rows / 2);
-  if (symmetry === 'mirror-h') return [r, c < hc ? c : cols - 1 - c];
-  if (symmetry === 'mirror-full') return [r < hr ? r : rows - 1 - r, c < hc ? c : cols - 1 - c];
-  return [r, c];
-}
+import { canUseOffscreenWorker, connectOffscreenWorker, createDeferredBackend } from '../video-tiles/offscreen.js';
+import { bandCount as bandCountOf, clampOutputDim, computeOutputSize, GIF_MAX_DIM, RENDER_MIN_DT } from './draw.js';
+import { createSoundRuntime } from './runtime.js';
 
 export function createSoundTilesEngine(outputCanvas) {
-  const ctx = outputCanvas.getContext('2d', { willReadFrequently: false });
-
-  const gifCanvas = document.createElement('canvas');
-  const gifCtx = gifCanvas.getContext('2d', { willReadFrequently: true });
-
   // <audio> nunca aparece no DOM visível — só toca o arquivo enviado (o
   // microfone não passa por aqui, ver enableMic). Ao contrário do <video>
   // do Espelho, este FICA COM SOM (muted=false) — a pessoa quer ouvir o
@@ -113,9 +46,6 @@ export function createSoundTilesEngine(outputCanvas) {
   let rafId = null;
   let paused = false;
   let lastRenderAt = 0;
-
-  let cellAssignments = null;
-  let cellAssignmentsKey = '';
 
   // nível ATUAL (já suavizado) de cada barra — uma posição fixa por banda de
   // frequência, redimensionado sempre que o número de barras muda (ver
@@ -153,10 +83,10 @@ export function createSoundTilesEngine(outputCanvas) {
     barsAxis: 'vertical',
     sensitivity: 1.4, // ganho aplicado à magnitude lida (o microfone costuma vir baixo)
     smoothing: 0.75, // repassado direto pro AnalyserNode.smoothingTimeConstant
-    // alcance do gradiente base→ponta DENTRO da própria barra (ver
-    // renderFrame) — 0 = toda célula acesa fica na cor da base (sem
-    // variação nenhuma); 1 = a ponta da barra chega no fim total do
-    // gradiente (0), mesmo numa barra curta.
+    // alcance do gradiente base→ponta DENTRO da própria barra (ver draw.js)
+    // — 0 = toda célula acesa fica na cor da base (sem variação nenhuma);
+    // 1 = a ponta da barra chega no fim total do gradiente (0), mesmo numa
+    // barra curta.
     colorResponse: 0.6,
     // opcional: só o formato "Tela cheia" passa um valor (calculado a
     // partir da caixa medida na tela, ver index.js/computeFullBox) — os
@@ -165,26 +95,78 @@ export function createSoundTilesEngine(outputCanvas) {
   };
 
   function bandCount() {
-    return options.barsAxis === 'vertical' ? options.cols : options.rows;
-  }
-  function heightCount() {
-    return options.barsAxis === 'vertical' ? options.rows : options.cols;
+    return bandCountOf(options);
   }
 
   function rebuildLevels() {
     levels = new Float32Array(bandCount());
   }
 
-  function rebuildCellShapesIfNeeded() {
-    const pool = options.shapesAllowed.length ? options.shapesAllowed : VIDEO_SHAPES;
-    const key = `${options.cols}x${options.rows}|${pool.join(',')}`;
-    if (cellAssignments && cellAssignmentsKey === key) return;
-    const rng = createRng(options.seed);
-    cellAssignmentsKey = key;
-    cellAssignments = Array.from({ length: options.cols * options.rows }, () => ({
-      shapeKey: pool[Math.floor(rng() * pool.length)],
-      orientation: CORNERS[Math.floor(rng() * CORNERS.length)],
-    }));
+  // --- backend: worker ou main thread -------------------------------------
+  // Interface interna igual nos dois: setOptions(snapshot, size),
+  // drawFrame(levels), startGif, stopGif() → Blob|null, destroy.
+  let gifRecording = false;
+  const onGifCaptureEnd = () => {
+    gifRecording = false;
+  };
+
+  function createWorkerBackend(link) {
+    link.on('gif-capture-ended', onGifCaptureEnd);
+    // backpressure: só manda um quadro novo depois que o anterior voltou
+    // pintado (a mensagem 'frame' do worker). Sem isso, numa resolução alta
+    // em celular fraco, a main thread mandaria 30 quadros/s e o worker
+    // pintaria 15 — a fila só cresceria e a imagem ficaria segundos
+    // atrasada em relação ao som. Descartar o quadro é o certo aqui: o
+    // próximo já vem com o nível atual.
+    let inFlightSince = 0;
+    link.on('frame', () => {
+      inFlightSince = 0;
+    });
+    return {
+      setOptions: (snapshot, size) => {
+        // o canvas da página (contexto bitmaprenderer) precisa ter o mesmo
+        // tamanho do offscreen pra captureStream/toBlob e layout ficarem certos
+        if (outputCanvas.width !== size.width) outputCanvas.width = size.width;
+        if (outputCanvas.height !== size.height) outputCanvas.height = size.height;
+        link.post({ type: 'options', options: snapshot, size });
+      },
+      drawFrame: (current) => {
+        const now = performance.now();
+        // 1s de tolerância: se o worker engasgar de verdade, não fica
+        // travado pra sempre esperando um 'frame' que não vem
+        if (inFlightSince && now - inFlightSince < 1000) return;
+        inFlightSince = now;
+        const copy = new Float32Array(current); // `levels` continua vivo aqui; vai uma cópia, transferida
+        link.post({ type: 'levels', levels: copy }, [copy.buffer]);
+      },
+      startGif: () => link.post({ type: 'gif-start' }),
+      stopGif: () => link.request({ type: 'gif-stop' }, 'gif-blob').then((reply) => reply.blob),
+      destroy: () => link.destroy(),
+    };
+  }
+
+  function createMainThreadBackend() {
+    const runtime = createSoundRuntime(outputCanvas, { onGifCaptureEnd });
+    return {
+      setOptions: runtime.setOptions,
+      drawFrame: runtime.paintLevels,
+      startGif: runtime.startGif,
+      stopGif: runtime.stopGif,
+      destroy: runtime.destroy,
+    };
+  }
+
+  // o handshake com o worker é assíncrono (ver connectOffscreenWorker) e a
+  // UI chama setOptions logo depois de criar o motor — por isso o backend
+  // começa "adiado": enfileira e repassa quando o real existir. drawFrame
+  // não enfileira (quadro velho não serve pra nada, ver createDeferredBackend).
+  const backend = createDeferredBackend(['setOptions', 'drawFrame', 'startGif', 'stopGif', 'destroy'], { dropWhilePending: ['drawFrame'] });
+  if (canUseOffscreenWorker()) {
+    connectOffscreenWorker(new URL('./render.worker.js', import.meta.url), outputCanvas).then((link) => {
+      backend.resolveWith(link ? createWorkerBackend(link) : createMainThreadBackend());
+    });
+  } else {
+    backend.resolveWith(createMainThreadBackend());
   }
 
   function setOptions(partial) {
@@ -194,14 +176,13 @@ export function createSoundTilesEngine(outputCanvas) {
     options.cols = cols;
     options.rows = rows;
     const out = computeOutputSize(cols, rows, clampOutputDim(options.maxDim));
-    outputCanvas.width = out.width;
-    outputCanvas.height = out.height;
     const gifOut = computeOutputSize(cols, rows, GIF_MAX_DIM);
-    gifCanvas.width = gifOut.width;
-    gifCanvas.height = gifOut.height;
     if (bandCount() !== prevBandCount) rebuildLevels();
     if (analyser) analyser.smoothingTimeConstant = Math.min(0.95, Math.max(0, options.smoothing));
-    rebuildCellShapesIfNeeded();
+    // snapshot raso: no worker vira uma cópia estrutural de qualquer jeito;
+    // no fallback o pintor só lê. Quem dimensiona o canvas de desenho é o
+    // runtime (ver runtime.js).
+    backend.setOptions({ ...options }, { width: out.width, height: out.height, gifWidth: gifOut.width, gifHeight: gifOut.height });
   }
   setOptions({});
 
@@ -388,77 +369,19 @@ export function createSoundTilesEngine(outputCanvas) {
     }
   }
 
+  // lê o espectro, suaviza e manda pintar — barato (512 bins + uma dezena
+  // de barras); o desenho da grade, que é o que pesa, fica com o backend.
   function renderFrame(timestamp) {
     if (!hasSource()) return;
     if (timestamp && timestamp - lastRenderAt < RENDER_MIN_DT) return;
     lastRenderAt = timestamp || 0;
-
     applyAttackRelease(sampleBands(bandCount()));
-
-    const { cols, rows } = options;
-    const outW = outputCanvas.width;
-    const outH = outputCanvas.height;
-
-    ctx.globalAlpha = 1 - Math.min(0.95, Math.max(0, options.trail));
-    ctx.fillStyle = options.background;
-    ctx.fillRect(0, 0, outW, outH);
-    ctx.globalAlpha = 1;
-
-    const cellSize = outW / cols;
-    const hCount = heightCount();
-    rebuildCellShapesIfNeeded();
-
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        // mapeia (linha,coluna) da grade pra (banda,altura-dentro-da-barra),
-        // conforme o eixo escolhido — depois de aplicar a simetria (espelha
-        // de ONDE lê a barra, não a célula em si).
-        const [sr, sc] = remapGridCoord(r, c, cols, rows, options.symmetry);
-        const band = options.barsAxis === 'vertical' ? sc : sr;
-        // posição dentro da barra, 0 = base (rodapé/esquerda) subindo —
-        // 'vertical': a LINHA 0 é o topo da grade, mas a barra cresce do
-        // RODAPÉ, então inverte (rows-1-linha); 'horizontal': a barra
-        // cresce da ESQUERDA, então a própria coluna já é a posição.
-        const heightIndex = options.barsAxis === 'vertical' ? rows - 1 - sr : sc;
-        const level = levels[band]; // 0-1, já suavizado
-
-        // célula "acesa" (dentro da altura ATUAL da barra) ou não. A cor
-        // segue a MESMA lógica de sempre — um gradiente da base (1) até a
-        // ponta da barra — só que agora normalizado pela altura ATUAL da
-        // barra (barHeight), não pela altura máxima da grade (hCount) como
-        // antes. Essa era a "sensibilidade zuada": uma barra curta (som
-        // baixo) media a posição contra o teto INTEIRO da grade, então toda
-        // célula acesa caía sempre pertinho de 1 — só uma barra quase no
-        // talo alcançava esticar até o fim do gradiente. Agora TODA barra,
-        // curta ou alta, percorre o gradiente inteiro na sua própria
-        // altura — o quanto disso realmente aparece (`colorResponse`) é o
-        // slider "Resposta das cores".
-        const barHeight = Math.max(1, Math.round(level * hCount));
-        const filled = heightIndex < barHeight;
-        const value = filled ? Math.max(0, 1 - (heightIndex / barHeight) * options.colorResponse) : 0;
-
-        const base = options.invert ? 1 - value : value;
-        const scale = options.colorMode === 'gradient' ? options.shapeScale : base * options.shapeScale;
-
-        let color;
-        if (options.colorMode === 'gradient') {
-          color = interpolateGradient(base, options.gradientColors);
-        } else if (options.colorMode === 'palette' && options.paletteColors.length) {
-          color = nearestPaletteColor({ r: Math.round(value * 255), g: Math.round(value * 255), b: Math.round(value * 255) }, options.paletteColors);
-        } else if (options.colorMode === 'custom' && options.customPaletteColors.length) {
-          color = nearestPaletteColor({ r: Math.round(value * 255), g: Math.round(value * 255), b: Math.round(value * 255) }, options.customPaletteColors);
-        } else {
-          color = options.inkColor;
-        }
-
-        const { shapeKey, orientation } = cellAssignments[r * cols + c];
-        const cx = c * cellSize + cellSize / 2;
-        const cy = r * cellSize + cellSize / 2;
-        drawVideoShape(ctx, shapeKey, orientation, cx, cy, cellSize, scale, color);
-      }
-    }
+    backend.drawFrame(levels);
   }
 
+  // rAF na main thread nos dois modos — é aqui que o AnalyserNode mora. Em
+  // aba oculta o próprio rAF para (document.visibilityState), então nem o
+  // worker recebe quadro nenhum.
   function loop(timestamp) {
     if (!paused) renderFrame(timestamp);
     rafId = requestAnimationFrame(loop);
@@ -474,7 +397,8 @@ export function createSoundTilesEngine(outputCanvas) {
   }
 
   // --- gravação (idêntico ao Espelho — opera só sobre o canvas de saída,
-  // não sabe nem precisa saber que a fonte agora é áudio) ----------------
+  // não sabe nem precisa saber que a fonte agora é áudio; no modo worker o
+  // canvas recebe cada quadro via bitmaprenderer e segue gravável) ---------
   let recorder = null;
   let recordedChunks = [];
 
@@ -506,73 +430,11 @@ export function createSoundTilesEngine(outputCanvas) {
     });
   }
 
-  let gifTimerId = null;
-  let gifFrames = null;
-  let gifRecordingSize = null;
-
-  function captureGifFrame() {
-    const { width, height } = gifRecordingSize;
-    gifCtx.drawImage(outputCanvas, 0, 0, width, height);
-    gifFrames.push(gifCtx.getImageData(0, 0, width, height).data);
-    if (gifFrames.length >= GIF_FPS * GIF_MAX_SECONDS) stopGifCapture();
-  }
-  function stopGifCapture() {
-    if (gifTimerId != null) clearInterval(gifTimerId);
-    gifTimerId = null;
-  }
-  function isGifRecording() {
-    return gifTimerId != null;
-  }
-  function startGifRecording() {
-    if (isGifRecording()) return;
-    gifFrames = [];
-    gifRecordingSize = { width: gifCanvas.width, height: gifCanvas.height };
-    gifTimerId = setInterval(captureGifFrame, 1000 / GIF_FPS);
-  }
-  function buildGifPalette() {
-    if (options.colorMode === 'gradient') {
-      const buckets = new Map();
-      const sampleFrames = [gifFrames[0], gifFrames[Math.floor(gifFrames.length / 2)], gifFrames[gifFrames.length - 1]].filter(Boolean);
-      for (const frame of sampleFrames) {
-        for (let i = 0; i < frame.length; i += 4 * 7) {
-          const key = `${frame[i] >> 4}-${frame[i + 1] >> 4}-${frame[i + 2] >> 4}`;
-          buckets.set(key, (buckets.get(key) || 0) + 1);
-        }
-      }
-      const toHex = (v) => v.toString(16).padStart(2, '0');
-      const sorted = [...buckets.entries()].sort((a, b) => b[1] - a[1]).slice(0, 250);
-      const colors = sorted.map(([key]) => {
-        const [r, g, b] = key.split('-').map((v) => Number(v) * 16 + 8);
-        return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
-      });
-      return [options.background, ...colors];
-    }
-    if (options.colorMode === 'palette' && options.paletteColors.length) {
-      return [options.background, ...options.paletteColors.map((c) => c.color)];
-    }
-    if (options.colorMode === 'custom' && options.customPaletteColors.length) {
-      return [options.background, ...options.customPaletteColors.map((c) => c.color)];
-    }
-    return [options.background, options.inkColor];
-  }
-  function stopGifRecording() {
-    stopGifCapture();
-    if (!gifFrames || !gifFrames.length) {
-      gifFrames = null;
-      return Promise.resolve(null);
-    }
-    const palette = buildGifPalette();
-    const { width, height } = gifRecordingSize;
-    const blob = encodeGif({ width, height, frames: gifFrames, palette, delayCs: Math.round(100 / GIF_FPS) });
-    gifFrames = null;
-    return Promise.resolve(blob);
-  }
-
   function destroy() {
     stop();
     clearSource();
     if (isRecording()) recorder.stop();
-    stopGifCapture();
+    backend.destroy(); // no modo worker: terminate()
     if (audioCtx) {
       audioCtx.close().catch(() => {});
       audioCtx = null;
@@ -612,9 +474,18 @@ export function createSoundTilesEngine(outputCanvas) {
     startRecording,
     stopRecording,
     isRecording,
-    startGifRecording,
-    stopGifRecording,
-    isGifRecording,
+    startGifRecording: () => {
+      if (gifRecording) return;
+      gifRecording = true;
+      backend.startGif();
+    },
+    // Promise<Blob|null> nos dois modos (no worker, o Blob já vem codificado
+    // de lá; no fallback, codifica aqui como sempre)
+    stopGifRecording: () => {
+      gifRecording = false;
+      return Promise.resolve(backend.stopGif());
+    },
+    isGifRecording: () => gifRecording,
     destroy,
     getCanvas: () => outputCanvas,
     getGridSize: () => ({ cols: options.cols, rows: options.rows }),

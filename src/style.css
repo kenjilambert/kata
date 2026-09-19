@@ -3679,3 +3679,78 @@ body {
     transition: opacity 0.15s ease;
   }
 }
+
+/* ==========================================================================
+   Toast (ver ui/toast.js) — avisos curtos no canto inferior direito; no
+   mobile ocupa a largura toda em cima do "bottom sheet" de ajustes.
+   Cantos arredondados/tokens iguais aos painéis, só com a borda esquerda
+   na cor do tipo (erro = vermelho da marca, sucesso = azul). */
+.toast-region {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(360px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--text-muted);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.4;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  animation: toast-in 0.24s var(--ease-expressive) both;
+}
+
+.toast-error {
+  border-left-color: var(--accent);
+}
+
+.toast-success {
+  border-left-color: var(--accent-2);
+}
+
+.toast-leaving {
+  animation: toast-out 0.22s ease both;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@media (max-width: 768px) {
+  .toast-region {
+    left: 16px;
+    right: 16px;
+    /* acima da barra de categorias do bottom sheet (ver .gi-mobile-category-tabs) */
+    bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+    max-width: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast,
+  .toast-leaving {
+    animation: none;
+  }
+}

@@ -26,48 +26,137 @@
      Só o arquivo latin (cobre todo o pt-BR); latin-ext só desce se um
      caractere pedir. -->
 <link rel="preload" href="./fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
-<link rel="stylesheet" href="./src/style.css" />
+<link rel="stylesheet" href="/src/style.css?v=829fcfda" />
+<!-- PWA: manifest (instalar na tela inicial / abrir sem barra do navegador)
+     e o equivalente do iOS, que ignora os ícones do manifest e só olha o
+     apple-touch-icon. Ícones em /icons/ são gerados por tools/make-icons.py. -->
+<link rel="manifest" href="/manifest.json" />
+<meta name="apple-mobile-web-app-title" content="Kata" />
+<link rel="apple-touch-icon" href="/icons/icon-192.png" />
+<!-- IMPORT MAP + MODULEPRELOAD — os dois blocos abaixo são GERADOS por
+     tools/build-assets.py (rodar antes de commitar; ver README). Não editar
+     à mão: o script sobrescreve o que está entre os marcadores.
+
+     Import map: não tem bundler, então o cache-busting é por URL —
+     `/src/x.js?v=HASH` (hash do conteúdo). Os imports no código continuam
+     relativos e sem hash (`../core/x.js`); o navegador resolve cada um pra
+     URL absoluta e o mapa troca pela versão com ?v=. Vale pra import
+     estático E pra import() dinâmico. É isso que permite servir /src/* com
+     Cache-Control immutable (ver _headers). Tem que vir ANTES de qualquer
+     modulepreload/script de módulo, senão o navegador ignora o mapa. -->
+<!-- assets:importmap:start -->
+<script type="importmap">
+{
+  "imports": {
+    "/src/core/aiPatternExport.js": "/src/core/aiPatternExport.js?v=0fded486",
+    "/src/core/clipboard-input.js": "/src/core/clipboard-input.js?v=3c154761",
+    "/src/core/color.js": "/src/core/color.js?v=84c3f6de",
+    "/src/core/composition.js": "/src/core/composition.js?v=71250740",
+    "/src/core/export.js": "/src/core/export.js?v=0246613e",
+    "/src/core/gifEncoder.js": "/src/core/gifEncoder.js?v=c3433632",
+    "/src/core/gradient.js": "/src/core/gradient.js?v=ac8c09d2",
+    "/src/core/i18n.js": "/src/core/i18n.js?v=f1cb7a4b",
+    "/src/core/imagePalette.js": "/src/core/imagePalette.js?v=ad68ec7c",
+    "/src/core/imageSampling.js": "/src/core/imageSampling.js?v=c12c27df",
+    "/src/core/layer-stack.js": "/src/core/layer-stack.js?v=7d264f93",
+    "/src/core/palette.js": "/src/core/palette.js?v=21002919",
+    "/src/core/patternState.js": "/src/core/patternState.js?v=86e24388",
+    "/src/core/seed.js": "/src/core/seed.js?v=5112a092",
+    "/src/core/symmetry.js": "/src/core/symmetry.js?v=756c7fdd",
+    "/src/core/textures.js": "/src/core/textures.js?v=e4ded07e",
+    "/src/core/themes.js": "/src/core/themes.js?v=96bd8bf2",
+    "/src/generated/asset-versions.js": "/src/generated/asset-versions.js?v=9e4faa41",
+    "/src/main.js": "/src/main.js?v=76cedb7a",
+    "/src/modules/gradient-tiles/draw.js": "/src/modules/gradient-tiles/draw.js?v=0010428f",
+    "/src/modules/gradient-tiles/engine.js": "/src/modules/gradient-tiles/engine.js?v=44e00653",
+    "/src/modules/gradient-tiles/index.js": "/src/modules/gradient-tiles/index.js?v=9559bde5",
+    "/src/modules/gradient-tiles/render.worker.js": "/src/modules/gradient-tiles/render.worker.js?v=ec8b0a82",
+    "/src/modules/gradient-tiles/runtime.js": "/src/modules/gradient-tiles/runtime.js?v=d9fc6e6b",
+    "/src/modules/grid-icons/generator.js": "/src/modules/grid-icons/generator.js?v=9eddc9bf",
+    "/src/modules/grid-icons/index.js": "/src/modules/grid-icons/index.js?v=03fc4ccf",
+    "/src/modules/grid-icons/shapes.js": "/src/modules/grid-icons/shapes.js?v=44751a4d",
+    "/src/modules/grid-icons/svgVectorShape.js": "/src/modules/grid-icons/svgVectorShape.js?v=7049a268",
+    "/src/modules/mosaic/generator.js": "/src/modules/mosaic/generator.js?v=81cc2730",
+    "/src/modules/mosaic/index.js": "/src/modules/mosaic/index.js?v=14f478be",
+    "/src/modules/sound-tiles/draw.js": "/src/modules/sound-tiles/draw.js?v=5b13a18a",
+    "/src/modules/sound-tiles/engine.js": "/src/modules/sound-tiles/engine.js?v=43a38ed8",
+    "/src/modules/sound-tiles/index.js": "/src/modules/sound-tiles/index.js?v=2b59f99d",
+    "/src/modules/sound-tiles/render.worker.js": "/src/modules/sound-tiles/render.worker.js?v=07bab798",
+    "/src/modules/sound-tiles/runtime.js": "/src/modules/sound-tiles/runtime.js?v=361ccf33",
+    "/src/modules/video-tiles/engine.js": "/src/modules/video-tiles/engine.js?v=31b2bf1e",
+    "/src/modules/video-tiles/index.js": "/src/modules/video-tiles/index.js?v=fb204d18",
+    "/src/modules/video-tiles/offscreen.js": "/src/modules/video-tiles/offscreen.js?v=827f83af",
+    "/src/modules/video-tiles/shapes.js": "/src/modules/video-tiles/shapes.js?v=f2e8e9ca",
+    "/src/ui/categoryIcons.js": "/src/ui/categoryIcons.js?v=6768444f",
+    "/src/ui/controls/button.js": "/src/ui/controls/button.js?v=fe9e7088",
+    "/src/ui/controls/checkboxGroup.js": "/src/ui/controls/checkboxGroup.js?v=7c56ab34",
+    "/src/ui/controls/colorSwatches.js": "/src/ui/controls/colorSwatches.js?v=94af0da4",
+    "/src/ui/controls/frameTilePicker.js": "/src/ui/controls/frameTilePicker.js?v=42f08465",
+    "/src/ui/controls/iconSelect.js": "/src/ui/controls/iconSelect.js?v=06aadb50",
+    "/src/ui/controls/pressButton.js": "/src/ui/controls/pressButton.js?v=2a62a020",
+    "/src/ui/controls/section.js": "/src/ui/controls/section.js?v=1526f7da",
+    "/src/ui/controls/select.js": "/src/ui/controls/select.js?v=73afbf0e",
+    "/src/ui/controls/shapeToggleGrid.js": "/src/ui/controls/shapeToggleGrid.js?v=549b8029",
+    "/src/ui/controls/slider.js": "/src/ui/controls/slider.js?v=aac2009b",
+    "/src/ui/controls/toggleGroup.js": "/src/ui/controls/toggleGroup.js?v=f0431e76",
+    "/src/ui/controls/toggleSwitch.js": "/src/ui/controls/toggleSwitch.js?v=e173cbe7",
+    "/src/ui/customCursor.js": "/src/ui/customCursor.js?v=c747682a",
+    "/src/ui/drawCanvas.js": "/src/ui/drawCanvas.js?v=0c38a864",
+    "/src/ui/dynamicLogo.js": "/src/ui/dynamicLogo.js?v=540390bb",
+    "/src/ui/module-switcher.js": "/src/ui/module-switcher.js?v=3661ba90",
+    "/src/ui/toast.js": "/src/ui/toast.js?v=a7f98114",
+    "/src/ui/toolbarIcons.js": "/src/ui/toolbarIcons.js?v=56280cc8",
+    "/src/ui/viewTransition.js": "/src/ui/viewTransition.js?v=f0828beb"
+  }
+}
+</script>
+<!-- assets:importmap:end -->
 <!-- modulepreload da cadeia de imports da PRIMEIRA aba (Azulejo) + casca.
      Sem bundler, o navegador só descobre cada import depois de baixar e
      parsear o arquivo que o importa — 4 "degraus" de rede em série. Com a
      lista aqui, tudo dispara em paralelo já no HTML. Os outros módulos
      (Mosaico/Gradiente/Som/Espelho) NÃO entram: são import() sob demanda
-     (ver MODULES em main.js). Lista gerada a partir do grafo estático de
-     imports — se um arquivo novo entrar na cadeia do Azulejo, adicionar
-     aqui (não é obrigatório, só deixa de ganhar o paralelismo). -->
-<link rel="modulepreload" href="./src/core/clipboard-input.js" />
-<link rel="modulepreload" href="./src/core/color.js" />
-<link rel="modulepreload" href="./src/core/export.js" />
-<link rel="modulepreload" href="./src/core/i18n.js" />
-<link rel="modulepreload" href="./src/core/imagePalette.js" />
-<link rel="modulepreload" href="./src/core/imageSampling.js" />
-<link rel="modulepreload" href="./src/core/palette.js" />
-<link rel="modulepreload" href="./src/core/patternState.js" />
-<link rel="modulepreload" href="./src/core/seed.js" />
-<link rel="modulepreload" href="./src/core/symmetry.js" />
-<link rel="modulepreload" href="./src/core/textures.js" />
-<link rel="modulepreload" href="./src/core/themes.js" />
-<link rel="modulepreload" href="./src/modules/grid-icons/generator.js" />
-<link rel="modulepreload" href="./src/modules/grid-icons/index.js" />
-<link rel="modulepreload" href="./src/modules/grid-icons/shapes.js" />
-<link rel="modulepreload" href="./src/modules/grid-icons/svgVectorShape.js" />
-<link rel="modulepreload" href="./src/ui/categoryIcons.js" />
-<link rel="modulepreload" href="./src/ui/controls/button.js" />
-<link rel="modulepreload" href="./src/ui/controls/colorSwatches.js" />
-<link rel="modulepreload" href="./src/ui/controls/frameTilePicker.js" />
-<link rel="modulepreload" href="./src/ui/controls/iconSelect.js" />
-<link rel="modulepreload" href="./src/ui/controls/pressButton.js" />
-<link rel="modulepreload" href="./src/ui/controls/section.js" />
-<link rel="modulepreload" href="./src/ui/controls/select.js" />
-<link rel="modulepreload" href="./src/ui/controls/shapeToggleGrid.js" />
-<link rel="modulepreload" href="./src/ui/controls/slider.js" />
-<link rel="modulepreload" href="./src/ui/controls/toggleSwitch.js" />
-<link rel="modulepreload" href="./src/ui/customCursor.js" />
-<link rel="modulepreload" href="./src/ui/drawCanvas.js" />
-<link rel="modulepreload" href="./src/ui/dynamicLogo.js" />
-<link rel="modulepreload" href="./src/ui/module-switcher.js" />
-<link rel="modulepreload" href="./src/ui/toolbarIcons.js" />
-<link rel="modulepreload" href="./src/ui/viewTransition.js" />
+     (ver MODULES em main.js). Lista = grafo ESTÁTICO de imports a partir de
+     main.js + grid-icons/index.js (PRELOAD_ENTRIES no script), já com ?v=. -->
+<!-- assets:preload:start -->
+<link rel="modulepreload" href="/src/core/clipboard-input.js?v=3c154761" />
+<link rel="modulepreload" href="/src/core/color.js?v=84c3f6de" />
+<link rel="modulepreload" href="/src/core/composition.js?v=71250740" />
+<link rel="modulepreload" href="/src/core/export.js?v=0246613e" />
+<link rel="modulepreload" href="/src/core/i18n.js?v=f1cb7a4b" />
+<link rel="modulepreload" href="/src/core/imagePalette.js?v=ad68ec7c" />
+<link rel="modulepreload" href="/src/core/imageSampling.js?v=c12c27df" />
+<link rel="modulepreload" href="/src/core/palette.js?v=21002919" />
+<link rel="modulepreload" href="/src/core/patternState.js?v=86e24388" />
+<link rel="modulepreload" href="/src/core/seed.js?v=5112a092" />
+<link rel="modulepreload" href="/src/core/symmetry.js?v=756c7fdd" />
+<link rel="modulepreload" href="/src/core/textures.js?v=e4ded07e" />
+<link rel="modulepreload" href="/src/core/themes.js?v=96bd8bf2" />
+<link rel="modulepreload" href="/src/generated/asset-versions.js?v=9e4faa41" />
+<link rel="modulepreload" href="/src/main.js?v=76cedb7a" />
+<link rel="modulepreload" href="/src/modules/grid-icons/generator.js?v=9eddc9bf" />
+<link rel="modulepreload" href="/src/modules/grid-icons/index.js?v=03fc4ccf" />
+<link rel="modulepreload" href="/src/modules/grid-icons/shapes.js?v=44751a4d" />
+<link rel="modulepreload" href="/src/modules/grid-icons/svgVectorShape.js?v=7049a268" />
+<link rel="modulepreload" href="/src/ui/categoryIcons.js?v=6768444f" />
+<link rel="modulepreload" href="/src/ui/controls/button.js?v=fe9e7088" />
+<link rel="modulepreload" href="/src/ui/controls/colorSwatches.js?v=94af0da4" />
+<link rel="modulepreload" href="/src/ui/controls/frameTilePicker.js?v=42f08465" />
+<link rel="modulepreload" href="/src/ui/controls/iconSelect.js?v=06aadb50" />
+<link rel="modulepreload" href="/src/ui/controls/pressButton.js?v=2a62a020" />
+<link rel="modulepreload" href="/src/ui/controls/section.js?v=1526f7da" />
+<link rel="modulepreload" href="/src/ui/controls/select.js?v=73afbf0e" />
+<link rel="modulepreload" href="/src/ui/controls/shapeToggleGrid.js?v=549b8029" />
+<link rel="modulepreload" href="/src/ui/controls/slider.js?v=aac2009b" />
+<link rel="modulepreload" href="/src/ui/controls/toggleSwitch.js?v=e173cbe7" />
+<link rel="modulepreload" href="/src/ui/customCursor.js?v=c747682a" />
+<link rel="modulepreload" href="/src/ui/drawCanvas.js?v=0c38a864" />
+<link rel="modulepreload" href="/src/ui/dynamicLogo.js?v=540390bb" />
+<link rel="modulepreload" href="/src/ui/module-switcher.js?v=3661ba90" />
+<link rel="modulepreload" href="/src/ui/toast.js?v=a7f98114" />
+<link rel="modulepreload" href="/src/ui/toolbarIcons.js?v=56280cc8" />
+<link rel="modulepreload" href="/src/ui/viewTransition.js?v=f0828beb" />
+<!-- assets:preload:end -->
 </head>
 <body>
 <header class="app-header">
@@ -84,6 +173,6 @@
     O Kata precisa de JavaScript pra gerar os padrões. / Kata needs JavaScript to generate patterns.
   </p>
 </noscript>
-<script type="module" src="./src/main.js"></script>
+<script type="module" src="/src/main.js?v=76cedb7a"></script>
 </body>
 </html>

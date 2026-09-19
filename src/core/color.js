@@ -61,3 +61,46 @@ export function generateHarmoniousPalette(baseHex, additionalCount) {
   }
   return colors;
 }
+
+// Aceita "#rgb" ou "#rrggbb" (com ou sem '#') e devolve os 3 canais em 0..255,
+// ou null se a string não for um hex reconhecível — quem chama decide o que
+// fazer (as regras de cor do gerador, por ex., simplesmente pulam a checagem
+// em vez de quebrar a geração por causa de uma cor malformada).
+function parseHexRgb(hex) {
+  if (typeof hex !== 'string') return null;
+  let s = hex.trim();
+  if (s.startsWith('#')) s = s.slice(1);
+  if (s.length === 3) s = s[0] + s[0] + s[1] + s[1] + s[2] + s[2];
+  if (s.length !== 6 || /[^0-9a-fA-F]/.test(s)) return null;
+  const n = parseInt(s, 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
+// sRGB (com a curva gamma) → linear, canal por canal — a fórmula exata da
+// WCAG 2.x, não a aproximação por potência 2.2.
+function srgbChannelToLinear(v8) {
+  const v = v8 / 255;
+  return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+}
+
+// Luminância relativa WCAG 2.x (0 = preto, 1 = branco). Base do contrastRatio
+// abaixo e reaproveitável por quem quiser ordenar cores por "claridade" de
+// verdade (a L do HSL de hexToHsl não é perceptual — #0000ff e #ffff00 têm
+// a mesma L=50 mas luminâncias 0.07 e 0.93).
+export function relativeLuminance(hex) {
+  const rgb = parseHexRgb(hex);
+  if (!rgb) return NaN;
+  return 0.2126 * srgbChannelToLinear(rgb.r) + 0.7152 * srgbChannelToLinear(rgb.g) + 0.0722 * srgbChannelToLinear(rgb.b);
+}
+
+// Razão de contraste WCAG 2.x: 1 (cores idênticas) a 21 (#000 vs #fff).
+// Simétrica — a ordem dos argumentos não importa. Devolve NaN se alguma das
+// cores não for hex válido.
+export function contrastRatio(hexA, hexB) {
+  const la = relativeLuminance(hexA);
+  const lb = relativeLuminance(hexB);
+  if (Number.isNaN(la) || Number.isNaN(lb)) return NaN;
+  const lighter = Math.max(la, lb);
+  const darker = Math.min(la, lb);
+  return (lighter + 0.05) / (darker + 0.05);
+}

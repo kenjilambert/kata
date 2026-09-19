@@ -9,7 +9,7 @@ import {
 } from '../../core/patternState.js';
 import { SYMMETRY_VALUES } from '../../core/symmetry.js';
 import { loadThemes, applyTheme as applyThemeShared, themePreviewColorsFor as themePreviewColorsForShared } from '../../core/themes.js';
-import { exportSvgString, exportPngFromSvgString, EXPORT_FRAME_RATIOS } from '../../core/export.js';
+import { exportSvgString, exportPngFromSvgString, EXPORT_FRAME_RATIOS, DEFAULT_PNG_TARGET_SIZE } from '../../core/export.js';
 import { listenForPaste, loadImageAsset } from '../../core/clipboard-input.js';
 import { openDrawCanvas } from '../../ui/drawCanvas.js';
 import { extractPaletteFromBlob } from '../../core/imagePalette.js';
@@ -28,6 +28,8 @@ import { createFrameTilePicker } from '../../ui/controls/frameTilePicker.js';
 import { CATEGORY_ICONS } from '../../ui/categoryIcons.js';
 import { withViewTransition } from '../../ui/viewTransition.js';
 import { TOOLBAR_ICONS } from '../../ui/toolbarIcons.js';
+import { showToast, showError } from '../../ui/toast.js';
+import { scoreComposition } from '../../core/composition.js';
 import { SHAPES } from './shapes.js';
 import {
   generateIcon,
@@ -55,6 +57,8 @@ const VARIATION_SIZE = 96;
 const VARIATION_COUNT = 6;
 const HISTORY_THUMB_SIZE = 88;
 const HISTORY_LIMIT = 24;
+// quantas seeds o "Estou com sorte" compara antes de escolher (ver randomizeAll).
+const LUCKY_CANDIDATES = 12;
 const PRESETS_STORAGE_KEY = 'gpg-grid-icons-presets';
 
 function loadSavedPresets() {
@@ -154,6 +158,16 @@ export const gridIconsModule = {
     // interessa na hora de exportar, não faz parte da "receita" do ícone,
     // então fica fora do state/snapshot (não polui presets nem histórico).
     let exportFrame = 'square';
+    // multiplicador do PNG exportado (1x = 1500px, ver DEFAULT_PNG_TARGET_SIZE
+    // em core/export.js) — só na hora de exportar, fora do state/snapshot.
+    let pngScale = 1;
+    // pilha de "refazer" do Ctrl+Z: a galeria de Histórico já é a pilha de
+    // desfazer (cada entrada é o estado ANTES de uma mudança); desfazer tira
+    // a entrada mais recente de lá e guarda o estado atual aqui, pra o
+    // Ctrl+Shift+Z/Ctrl+Y conseguir voltar. Qualquer mudança nova (que passa
+    // por pushToHistory) zera isso — refazer só faz sentido logo depois de
+    // desfazer.
+    let redoStack = [];
     // guarda o ícone "cru" (sempre quadrado 1:1, o resultado editável de
     // sempre) — nunca muda com o "Formato de exportação".
     let currentIconSvg = '';
@@ -200,6 +214,16 @@ export const gridIconsModule = {
         themeDropdownOpen = false;
         buildSidebar();
       }
+    }
+
+    function suggestedPresetName() {
+      const theme = state.themeKey === 'custom' ? t('customThemeLabel') : t(`theme_${state.themeKey}`);
+      const base = `${theme} ${state.resolution}×${state.resolution} · ${Math.round(state.fillDensity * 100)}%`;
+      // evita dois presets com o mesmo nome automático: "… 2", "… 3"...
+      let name = base;
+      let n = 2;
+      while (savedPresets.some((p) => p.name === name)) name = `${base} ${n++}`;
+      return name;
     }
 
     function savePreset(name) {
@@ -412,10 +436,34 @@ export const gridIconsModule = {
       randomizeShapesSettings();
       randomizeColorSettings();
       randomizeAppearanceSettings();
-      state.seed = randomSeed();
+      // "Estou com sorte" curado: em vez de UMA seed aleatória, sorteia
+      // várias por baixo dos panos e fica com a de melhor composição (ver
+      // core/composition.js: equilíbrio de cor, contraste com o fundo,
+      // variedade de formas, peso centrado, pouca repetição vizinha). O
+      // botão continua surpreendendo — só erra menos. Grades são pequenas
+      // (≤10x10), 12 sorteios custam poucos milissegundos.
+      state.seed = pickBestSeed(LUCKY_CANDIDATES);
       refreshGridOverrideIfEditing();
       buildSidebar();
       withViewTransition(render, { element: preview, name: 'shapes-preview' });
+      showToast(t('luckyCuratedToast').replace('{n}', String(LUCKY_CANDIDATES)), { duration: 1600 });
+    }
+
+    function pickBestSeed(count) {
+      let best = null;
+      for (let i = 0; i < count; i++) {
+        const seed = randomSeed();
+        const params = iconParams(seed);
+        const { grid } = buildIconGrid(params);
+        const score = scoreComposition({
+          grid,
+          colors: params.colors,
+          background: params.background,
+          shapesAllowed: params.shapesAllowed,
+        });
+        if (!best || score > best.score) best = { seed, score };
+      }
+      return best.seed;
     }
 
     // só aplica o tema padrão na primeiríssima montagem — em remontagens
@@ -1429,6 +1477,29 @@ export const gridIconsModule = {
       }
     }
 
+    // link compartilhável: `#k=<código>` na URL (ver copyLinkButton). Lido só
+    // na montagem; depois de aplicar, o hash é limpo (window.history — o
+    // `history` deste escopo é a galeria) pra um F5 não reaplicar o link em
+    // cima do que a pessoa já mudou. O link em si continua funcionando.
+    function applySnapshotFromLocationHash() {
+      const m = /^#k=(.+)$/.exec(location.hash || '');
+      if (!m) return;
+      let code = m[1];
+      try {
+        code = decodeURIComponent(code);
+      } catch (err) {
+        /* já estava sem escape */
+      }
+      const snapshot = decodeShareCode(code);
+      if (snapshot) {
+        applySnapshot(snapshot);
+        showToast(t('linkAppliedToast'), { kind: 'success' });
+      } else {
+        showToast(t('linkInvalidToast'), { kind: 'error' });
+      }
+      window.history.replaceState(null, '', `${location.pathname}${location.search}`);
+    }
+
     function revokeUrlUnlessInHistory(url) {
       if (!url) return;
       const stillReferenced = history.some(
@@ -1437,7 +1508,7 @@ export const gridIconsModule = {
       if (!stillReferenced) URL.revokeObjectURL(url);
     }
 
-    function pushToHistory() {
+    function buildHistoryEntry() {
       const snapshot = {
         ...buildBaseSnapshot(),
         structureImageUrl: state.structureImageUrl,
@@ -1448,9 +1519,40 @@ export const gridIconsModule = {
         colorImageEl: state.colorImageEl,
         useSameImageForColor: state.useSameImageForColor,
       };
-      history.unshift({ svg: iconSvg(state.seed, HISTORY_THUMB_SIZE), snapshot });
+      return { svg: iconSvg(state.seed, HISTORY_THUMB_SIZE), snapshot };
+    }
+
+    function pushToHistory() {
+      history.unshift(buildHistoryEntry());
       if (history.length > HISTORY_LIMIT) history.length = HISTORY_LIMIT;
+      redoStack = [];
       renderHistory();
+    }
+
+    // Ctrl+Z — volta pro estado mais recente da galeria de Histórico e
+    // guarda o atual na pilha de refazer (ver redoStack).
+    function undo() {
+      if (!history.length) {
+        showToast(t('nothingToUndoToast'), { duration: 1400 });
+        return;
+      }
+      const entry = history.shift();
+      redoStack.push(buildHistoryEntry());
+      restoreHistoryEntry(entry);
+      renderHistory();
+      showToast(t('undoToast'), { duration: 1200 });
+    }
+
+    // Ctrl+Shift+Z / Ctrl+Y — desfaz o desfazer: o estado atual volta pra
+    // galeria (é de novo "o estado antes da mudança") e o guardado reaplica.
+    function redo() {
+      const entry = redoStack.pop();
+      if (!entry) return;
+      history.unshift(buildHistoryEntry());
+      if (history.length > HISTORY_LIMIT) history.length = HISTORY_LIMIT;
+      restoreHistoryEntry(entry);
+      renderHistory();
+      showToast(t('redoToast'), { duration: 1200 });
     }
 
     function restoreHistoryEntry(entry) {
@@ -1531,6 +1633,7 @@ export const gridIconsModule = {
         try {
           maskDataUrl = await rasterizeCustomShape(file);
         } catch (err) {
+          showError('shapeLoadErrorToast', err);
           return;
         }
         entry = { kind: 'mask', maskDataUrl };
@@ -1557,6 +1660,7 @@ export const gridIconsModule = {
       try {
         palette = await extractPaletteFromBlob(blob);
       } catch (err) {
+        showError('paletteExtractErrorToast', err);
         return false;
       }
       if (!palette.length) return false;
@@ -1576,6 +1680,7 @@ export const gridIconsModule = {
       try {
         asset = await loadImageAsset(blob);
       } catch (err) {
+        showError('imageLoadErrorToast', err);
         return;
       }
 
@@ -1602,6 +1707,7 @@ export const gridIconsModule = {
       try {
         asset = await loadImageAsset(blob);
       } catch (err) {
+        showError('imageLoadErrorToast', err);
         return;
       }
 
@@ -1796,7 +1902,47 @@ export const gridIconsModule = {
       return wrap;
     }
 
+    // a sidebar é reconstruída do zero a cada mudança de estado (~40 pontos
+    // chamam isso). Sem esta casca, cada rebuild jogava o scroll de volta pro
+    // topo e derrubava o foco do teclado — quem estava ajustando algo lá
+    // embaixo perdia o lugar toda vez. Guarda a posição de rolagem (da
+    // sidebar, da coluna e de cada seção que rola sozinha no mobile) e uma
+    // "assinatura" do elemento focado, reconstrói, e restaura os dois.
     function buildSidebar() {
+      const scrollColumn = sidebar.parentElement;
+      const prevScroll = { sidebar: sidebar.scrollTop, column: scrollColumn?.scrollTop ?? 0 };
+      const sectionScroll = new Map();
+      sidebar.querySelectorAll('[data-section-id]').forEach((el) => {
+        if (el.scrollTop) sectionScroll.set(el.dataset.sectionId, el.scrollTop);
+      });
+      const active = document.activeElement;
+      const focusKey = active && sidebar.contains(active) ? focusKeyFor(active) : null;
+
+      buildSidebarInner();
+
+      sidebar.scrollTop = prevScroll.sidebar;
+      if (scrollColumn) scrollColumn.scrollTop = prevScroll.column;
+      sectionScroll.forEach((top, id) => {
+        const el = sidebar.querySelector(`[data-section-id="${id}"]`);
+        if (el) el.scrollTop = top;
+      });
+      if (focusKey) {
+        const candidates = sidebar.querySelectorAll('button, [tabindex], input, select, textarea');
+        const match = Array.from(candidates).find((el) => focusKeyFor(el) === focusKey);
+        match?.focus?.({ preventScroll: true });
+      }
+    }
+
+    // identidade "estável" de um controle entre dois rebuilds (o nó em si é
+    // sempre novo): tag + nome acessível + texto curto. Não usa o valor, que
+    // é justamente o que acabou de mudar.
+    function focusKeyFor(el) {
+      const name = el.getAttribute?.('aria-label') || el.getAttribute?.('title') || '';
+      const text = (el.textContent || '').trim().slice(0, 40);
+      return `${el.tagName}|${el.getAttribute?.('role') || ''}|${name}|${text}|${el.dataset?.sectionId || ''}`;
+    }
+
+    function buildSidebarInner() {
       sidebar.innerHTML = '';
 
       // --- Tema ---
@@ -2683,11 +2829,13 @@ export const gridIconsModule = {
       presetNameInput.placeholder = t('presetNamePlaceholder');
       presetNameInput.setAttribute('aria-label', t('presetNamePlaceholder'));
 
+      // nome sugerido a partir da receita ("Terracota 6×6 · 70%") — aparece
+      // como placeholder e é o que vale se a pessoa salvar sem digitar nada.
+      presetNameInput.placeholder = suggestedPresetName();
       const savePresetButton = createButton({
         label: t('savePresetButton'),
         onClick: () => {
-          const name = presetNameInput.value.trim();
-          if (!name) return;
+          const name = presetNameInput.value.trim() || suggestedPresetName();
           savePreset(name);
         },
       });
@@ -2757,6 +2905,23 @@ export const gridIconsModule = {
         },
       });
 
+      // mesmo código, só que já dentro de um link: quem abrir vê exatamente
+      // este azulejo (ver applySnapshotFromLocationHash, na montagem).
+      const copyLinkButton = createButton({
+        label: t('copyLinkButton'),
+        onClick: async () => {
+          const code = encodeShareCode(buildBaseSnapshot());
+          if (!code) return;
+          const url = `${location.origin}${location.pathname}#k=${encodeURIComponent(code)}`;
+          try {
+            await navigator.clipboard.writeText(url);
+            flashButtonText(copyLinkButton, t('copyLinkButtonCopied'), t('copyLinkButton'));
+          } catch (err) {
+            flashButtonText(copyLinkButton, t('copyCodeButtonError'), t('copyLinkButton'));
+          }
+        },
+      });
+
       const pasteCodeInput = document.createElement('input');
       pasteCodeInput.type = 'text';
       pasteCodeInput.className = 'preset-name-input';
@@ -2784,7 +2949,7 @@ export const gridIconsModule = {
       sidebar.appendChild(
         createSection(
           t('shareCodeSectionTitle'),
-          [copyCodeButton.el, pasteCodeRow],
+          [copyCodeButton.el, copyLinkButton.el, pasteCodeRow],
           sectionOptions('share')
         )
       );
@@ -2810,14 +2975,16 @@ export const gridIconsModule = {
         variant: 'primary',
         onClick: async () => {
           try {
-            await exportPngFromSvgString(currentFramedIconSvg, `icone-${state.themeKey}.png`, {
+            await exportPngFromSvgString(currentFramedIconSvg, `icone-${state.themeKey}${pngScale > 1 ? `@${pngScale}x` : ''}.png`, {
               background: state.transparentBg ? null : state.background,
+              targetSize: DEFAULT_PNG_TARGET_SIZE * pngScale,
             });
             flashExportSuccess(exportPngButton.el);
           } catch (err) {
             // sem isso, uma falha (ex.: navegador bloqueando canvas/blob)
             // não dava sinal nenhum pra quem clicou — parecia que o botão
             // simplesmente não fazia nada.
+            showError('exportPngErrorToast', err);
             const original = t('exportPngButton');
             setButtonLabel(exportPngButton.el, t('copyCodeButtonError'));
             setTimeout(() => {
@@ -2832,11 +2999,30 @@ export const gridIconsModule = {
       // (fora do sistema de abas), então apareciam repetidos embaixo de
       // TODA categoria aberta, não só quando fazia sentido. No desktop
       // continuam soltos no fim da sidebar, do jeito de sempre.
+      // tamanho do PNG (1x/2x/4x) — o SVG é vetor, não precisa.
+      const pngScaleSelect = createSelect({
+        label: t('pngScaleLabel'),
+        options: [
+          { value: 1, label: t('pngScale1x') },
+          { value: 2, label: t('pngScale2x') },
+          { value: 4, label: t('pngScale4x') },
+        ],
+        value: pngScale,
+        onChange: (value) => {
+          pngScale = Number(value) || 1;
+        },
+      });
+
       if (isMobileViewport) {
         sidebar.appendChild(
-          createSection(t('exportSectionTitle'), [exportSvgButton.el, exportPngButton.el], sectionOptions('export'))
+          createSection(
+            t('exportSectionTitle'),
+            [pngScaleSelect.el, exportSvgButton.el, exportPngButton.el],
+            sectionOptions('export')
+          )
         );
       } else {
+        sidebar.appendChild(pngScaleSelect.el);
         const actions = document.createElement('div');
         actions.className = 'gi-actions';
         actions.appendChild(exportSvgButton.el);
@@ -2975,6 +3161,7 @@ export const gridIconsModule = {
 
     render();
     renderHistory();
+    applySnapshotFromLocationHash();
 
     cleanupPaste = listenForPaste(window, { onImage: (file) => handleStructureImage(file) });
 
@@ -2984,11 +3171,26 @@ export const gridIconsModule = {
     // nome de preset ou colando um código) ou se tem modificador junto
     // (evita brigar com atalho do navegador/SO).
     function handleKeyboardShortcut(e) {
-      if (e.key !== ' ' && e.code !== 'Space') return;
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (document.activeElement?.isContentEditable) return;
+      // Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y (Cmd no Mac) — desfazer/refazer.
+      // Só sem Alt, pra não brigar com atalho do SO.
+      const mod = e.ctrlKey || e.metaKey;
+      const key = typeof e.key === 'string' ? e.key.toLowerCase() : '';
+      if (mod && !e.altKey && key === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+        return;
+      }
+      if (mod && !e.altKey && !e.shiftKey && key === 'y') {
+        e.preventDefault();
+        redo();
+        return;
+      }
+      if (e.key !== ' ' && e.code !== 'Space') return;
+      if (mod || e.altKey) return;
       e.preventDefault();
       pushToHistory();
       state.seed = randomSeed();

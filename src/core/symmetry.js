@@ -80,12 +80,21 @@ export function generateSymmetricGrid({ size, symmetry, cellFactory }) {
       .map((row) => row.slice().reverse().map((cell) => remapCell(cell, MIRROR_BOTH)));
   }
 
+  // cada quadrante acima já está "como vai aparecer" (tr já é o espelho/a
+  // rotação do tl, linha a linha, em coordenadas locais) — então é só
+  // encaixar cada um no seu canto, com deslocamento direto. Antes o encaixe
+  // invertia os índices de novo (grid[r][size-1-c] = tr[r][c]), desfazendo
+  // o reverse() do espelho e virando a rotação ao contrário: "espelho
+  // total" e "rotacional" saíam como uma CÓPIA transladada do quadrante,
+  // com só a orientação das formas remapeada — não era simetria de verdade
+  // (o espelho horizontal, que tem laço próprio acima, sempre esteve certo).
+  const off = size - h;
   for (let r = 0; r < h; r++) {
     for (let c = 0; c < h; c++) {
       grid[r][c] = tl[r][c];
-      grid[r][size - 1 - c] = tr[r][c];
-      grid[size - 1 - r][c] = bl[r][c];
-      grid[size - 1 - r][size - 1 - c] = br[r][c];
+      grid[r][off + c] = tr[r][c];
+      grid[off + r][c] = bl[r][c];
+      grid[off + r][off + c] = br[r][c];
     }
   }
 

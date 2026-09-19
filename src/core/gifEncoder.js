@@ -194,3 +194,109 @@ export function encodeGif({ width, height, frames, palette, delayCs = 10 }) {
 
   return new Blob([new Uint8Array(bytes)], { type: 'image/gif' });
 }
+
+// --- gravador periódico de quadros → GIF ---------------------------------
+// A mesma rotina de captura estava triplicada em Espelho/Som/Gradiente
+// (setInterval → drawImage do canvas de saída reduzido → getImageData →
+// teto de duração). Aqui ela vira um único objeto que funciona com QUALQUER
+// canvas de origem (HTMLCanvasElement OU OffscreenCanvas) — por isso não
+// toca em `document` quando OffscreenCanvas existe: precisa rodar dentro de
+// um Web Worker (ver render.worker.js de cada módulo), onde não há DOM.
+//
+// - `source()`: devolve o canvas de onde copiar cada quadro
+// - `getSize()`: {width, height} do GIF NO MOMENTO em que a gravação começa —
+//   guardado até o fim (trocar de formato no meio não mistura tamanhos)
+// - `buildPalette(frames)`: até 256 cores hex — quem conhece o modo de cor
+//   (o motor) decide se é uma lista fixa ou um scan dos quadros
+// - `onCaptureEnd()`: chamado quando bate no teto de duração. Os quadros
+//   ficam GUARDADOS até stop() — quem chamar depois ainda recebe o GIF
+//   (antes, GIF que batia no teto era descartado sem aviso).
+export function createGifRecorder({ source, getSize, fps, maxSeconds, buildPalette, onCaptureEnd }) {
+  let canvas = null;
+  let ctx = null;
+  let timerId = null;
+  let frames = null;
+  let size = null;
+
+  function ensureCanvas(width, height) {
+    if (!canvas) {
+      canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(width, height) : document.createElement('canvas');
+      ctx = canvas.getContext('2d', { willReadFrequently: true });
+    }
+    if (canvas.width !== width) canvas.width = width;
+    if (canvas.height !== height) canvas.height = height;
+  }
+
+  function capture() {
+    const { width, height } = size;
+    ctx.drawImage(source(), 0, 0, width, height);
+    frames.push(ctx.getImageData(0, 0, width, height).data);
+    if (frames.length >= fps * maxSeconds) {
+      stopCapture();
+      onCaptureEnd?.();
+    }
+  }
+
+  function stopCapture() {
+    if (timerId != null) clearInterval(timerId);
+    timerId = null;
+  }
+
+  function start() {
+    if (timerId != null) return;
+    size = getSize();
+    ensureCanvas(size.width, size.height);
+    frames = [];
+    timerId = setInterval(capture, 1000 / fps);
+  }
+
+  // síncrono e pesado (quantização + LZW de todos os quadros) — quem chama
+  // decide onde isso roda: no worker, quando o desenho já está lá, ou na
+  // main thread no fallback (como sempre foi).
+  function stop() {
+    stopCapture();
+    if (!frames || !frames.length) {
+      frames = null;
+      return null;
+    }
+    const blob = encodeGif({
+      width: size.width,
+      height: size.height,
+      frames,
+      palette: buildPalette(frames),
+      delayCs: Math.round(100 / fps),
+    });
+    frames = null;
+    return blob;
+  }
+
+  return {
+    start,
+    stop,
+    stopCapture,
+    isCapturing: () => timerId != null,
+    destroy: stopCapture,
+  };
+}
+
+// paleta por VARREDURA dos quadros (modos de cor contínua: gradiente, "cores
+// do vídeo") — amostra 1 a cada ~7 pixels de 3 quadros (primeiro/meio/último),
+// agrupa em baldes de 4 bits por canal e fica com os 250 mais frequentes,
+// mais o fundo na frente. Antes esse mesmo bloco vivia copiado nos 3 motores.
+export function scanFramesPalette(frames, background) {
+  const buckets = new Map();
+  const sampleFrames = [frames[0], frames[Math.floor(frames.length / 2)], frames[frames.length - 1]].filter(Boolean);
+  for (const frame of sampleFrames) {
+    for (let i = 0; i < frame.length; i += 4 * 7) {
+      const key = `${frame[i] >> 4}-${frame[i + 1] >> 4}-${frame[i + 2] >> 4}`;
+      buckets.set(key, (buckets.get(key) || 0) + 1);
+    }
+  }
+  const toHex = (v) => v.toString(16).padStart(2, '0');
+  const sorted = [...buckets.entries()].sort((a, b) => b[1] - a[1]).slice(0, 250);
+  const colors = sorted.map(([key]) => {
+    const [r, g, b] = key.split('-').map((v) => Number(v) * 16 + 8);
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+  });
+  return [background, ...colors];
+}
