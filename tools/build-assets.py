@@ -32,6 +32,7 @@ O que este script faz (idempotente — rodar 2x não muda nada):
 Só stdlib. Rodar da raiz do repo ou de qualquer lugar: `py tools/build-assets.py`.
 """
 
+import base64
 import hashlib
 import json
 import posixpath
@@ -236,11 +237,15 @@ def main() -> int:
     eol = detect_eol(html)
 
     importmap = {'imports': {url: versioned(url) for url in sorted(hashes) if url.endswith('.js')}}
-    importmap_body = (
-        eol + '<script type="importmap">' + eol
-        + json.dumps(importmap, indent=2).replace('\n', eol)
-        + eol + '</script>' + eol
-    )
+    # JSON compacto numa linha só, SEM quebra de linha dentro do <script>: o
+    # CSP (script-src 'self') bloqueia script inline — e um <script
+    # type="importmap"> é script inline — a menos que o hash sha256 do
+    # conteúdo exato esteja na política. Se houvesse quebras de linha aqui, o
+    # hash mudaria conforme LF/CRLF (o git reescreve quebras no checkout) e a
+    # política deixaria de casar com o arquivo servido.
+    importmap_text = json.dumps(importmap, separators=(',', ':'), sort_keys=True)
+    importmap_hash = 'sha256-' + base64.b64encode(hashlib.sha256(importmap_text.encode('utf-8')).digest()).decode('ascii')
+    importmap_body = eol + '<script type="importmap">' + importmap_text + '</script>' + eol
     html = replace_between(html, IMPORTMAP_START, IMPORTMAP_END, importmap_body, 'index.html')
 
     preload_body = eol + eol.join(
@@ -313,6 +318,18 @@ def main() -> int:
     if HEADERS.exists():
         headers_text = read_text(HEADERS)
         h_eol = detect_eol(headers_text)
+        # hash do import map inline no CSP — sem ele o navegador bloqueia o
+        # mapa (erro "Executing inline script violates ... script-src"), os
+        # imports resolvem SEM ?v= e o site baixa tudo duas vezes (uma pelo
+        # modulepreload versionado, outra pelo import real), caindo ainda no
+        # cache imutável sem versão. Mantém exatamente 1 hash na diretiva.
+        headers_text, n = re.subn(
+            r"script-src 'self'(?: 'sha256-[A-Za-z0-9+/=]+')*",
+            f"script-src 'self' '{importmap_hash}'",
+            headers_text,
+        )
+        if n != 1:
+            sys.exit(f'ERRO: esperava exatamente 1 "script-src \'self\'" no _headers, achei {n}')
         rules = []
         for url in sorted(worker_chain):
             rules.append(url)
