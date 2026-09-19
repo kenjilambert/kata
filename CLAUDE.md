@@ -19,7 +19,7 @@ Depois abrir `http://localhost:5543`. Cache do `http.server`: se o navegador ser
 
 **Testes:** `npm test` (ou `node --test tests/`) — propriedades do gerador (determinismo, simetria, SVG bem formado, cores na paleta), temas, i18n, paletas, cor. Sem dependências.
 
-**Deploy:** Cloudflare Pages (projeto `kata`, `.wrangler/` só cache local), push em `main` publica. `_headers` tem CSP fechado em `'self'` (fontes locais), cache imutável pra `/src/*` e `/fonts/*`, `no-cache` pra `sw.js`/`manifest.json`.
+**Deploy:** Cloudflare Pages (projeto `kata`, upload direto — NÃO está ligado ao GitHub pelo painel). Quem publica é o GitHub Actions (`.github/workflows/deploy.yml`) a cada push em `main`, usando o segredo `CLOUDFLARE_API_TOKEN`; à mão, `npx wrangler pages deploy <pasta> --project-name kata` (há login do wrangler nesta máquina). `_headers` tem CSP fechado em `'self'` (fontes locais), cache imutável pra `/src/*` e `/fonts/*`, `no-cache` pra `sw.js`/`manifest.json`.
 
 ## Arquitetura de carga
 

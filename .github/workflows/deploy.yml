@@ -1,0 +1,56 @@
+# Publica no Cloudflare Pages (projeto "kata", upload direto) a cada push em
+# main. O projeto foi criado por upload direto e não dá pra convertê-lo pra
+# integração Git no painel — este workflow faz o mesmo papel: roda o build de
+# assets (importmap/hash/CSP), os testes, e sobe só o que o site precisa.
+#
+# Segredo necessário no repositório (Settings → Secrets and variables →
+# Actions): CLOUDFLARE_API_TOKEN, um token com a permissão
+# "Cloudflare Pages: Edit" na conta. O account id não é segredo.
+name: Deploy Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # se alguém commitou sem rodar o build, o CI conserta: os hashes/CSP
+      # publicados sempre batem com o conteúdo. (O repositório pode ficar 1
+      # build atrasado, mas o site nunca.)
+      - name: Build de assets (importmap, preload, versões, CSP)
+        run: python tools/build-assets.py
+
+      - name: Testes
+        run: npm test
+
+      - name: Monta a pasta publicada (sem testes, tools e docs)
+        run: |
+          mkdir -p dist
+          cp -r index.html _headers sw.js manifest.json fonts icons src dist/
+
+      - name: Publica no Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: 9dcbee04a1f6c2a8417db63be448c7f8
+          command: pages deploy dist --project-name kata --branch main --commit-hash ${{ github.sha }} --commit-message "${{ github.event.head_commit.message || 'manual' }}"

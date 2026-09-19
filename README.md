@@ -20,6 +20,10 @@ Se esquecer de rodar, o site não quebra — mas o arquivo editado continua com 
 
 Ícones do PWA (`icons/`) são gerados uma vez por `py tools/make-icons.py`; só rodar de novo se quiser mudar o desenho.
 
+## Publicação
+
+Push em `main` dispara `.github/workflows/deploy.yml`: roda `tools/build-assets.py`, `npm test` e publica no Cloudflare Pages (projeto `kata`) com `wrangler`. Precisa do segredo `CLOUDFLARE_API_TOKEN` no repositório (token com permissão "Cloudflare Pages: Edit"). Publicar à mão: `npx wrangler pages deploy <pasta> --project-name kata`.
+
 ## Estrutura
 
 - `src/core/` — núcleo compartilhado: seed, paletas, temas, cor (`color.js`, com contraste WCAG), composição (`composition.js`, nota de qualidade de uma grade), simetria, estado compartilhado, exportação SVG/PNG/.ai/GIF, paleta por k-means de imagem, i18n.
