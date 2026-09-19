@@ -85,6 +85,43 @@ export function createModuleSwitcher(container, modules, tabsContainer, { onActi
     }
   }
 
+  // módulos chegam como "descritores" (id + label + load(), ver MODULES em
+  // main.js) — o código de verdade (mount/unmount) só desce na PRIMEIRA
+  // ativação, via import() dinâmico, e fica guardado em mod.impl pras
+  // próximas. Um módulo já "completo" (com mount direto, sem load) também
+  // é aceito, pro switcher continuar servindo pra qualquer objeto no
+  // formato antigo { id, label, mount, unmount }.
+  function resolveImpl(mod) {
+    if (mod.impl) return Promise.resolve(mod.impl);
+    if (!mod.load) {
+      mod.impl = mod;
+      return Promise.resolve(mod);
+    }
+    if (!mod.loading) {
+      mod.loading = mod
+        .load()
+        .then((impl) => {
+          mod.impl = impl;
+          return impl;
+        })
+        .catch((err) => {
+          // falha de rede não vira cache permanente de erro — a próxima
+          // tentativa (outro clique na aba) busca de novo.
+          mod.loading = null;
+          throw err;
+        });
+    }
+    return mod.loading;
+  }
+
+  // pré-busca o código da aba assim que a pessoa DEMONSTRA interesse
+  // (mouse em cima / foco por teclado / dedo encostando), antes do clique —
+  // na prática o clique já encontra o módulo baixado e a troca fica
+  // instantânea, sem pagar o custo de baixar tudo na carga inicial.
+  function prefetch(mod) {
+    resolveImpl(mod).catch(() => {});
+  }
+
   async function activate(mod) {
     if (busy) {
       // marca a aba clicada na hora (resposta visual imediata), mas só troca
@@ -114,12 +151,24 @@ export function createModuleSwitcher(container, modules, tabsContainer, { onActi
       // left/top/width/height/background dela direto — a transition CSS
       // cuida do resto sozinha, sem VT nenhum.
       markActiveTab(mod);
+      // baixa o código ANTES de desmontar a aba atual — se a rede falhar, a
+      // aba de antes continua inteira na tela em vez de sumir e deixar um
+      // painel vazio no lugar.
+      let impl;
+      try {
+        impl = await resolveImpl(mod);
+      } catch (err) {
+        console.error(`Kata: falha ao carregar o módulo "${mod.id}"`, err);
+        if (current) markActiveTab(current);
+        else content.textContent = t('moduleLoadError');
+        return;
+      }
       await withViewTransition(
         async () => {
-          if (current?.unmount) current.unmount();
+          if (current?.impl?.unmount) current.impl.unmount();
           content.innerHTML = '';
           current = mod;
-          await mod.mount(content);
+          await impl.mount(content);
         },
         { element: content, name: 'module-content' }
       );
@@ -164,6 +213,8 @@ export function createModuleSwitcher(container, modules, tabsContainer, { onActi
     btn.appendChild(circle);
     btn.appendChild(label);
     btn.addEventListener('click', () => activate(mod));
+    btn.addEventListener('pointerenter', () => prefetch(mod));
+    btn.addEventListener('focus', () => prefetch(mod));
     tabs.appendChild(btn);
     return { mod, btn, label };
   });

@@ -1,14 +1,47 @@
 import { createModuleSwitcher } from './ui/module-switcher.js';
-import { gridIconsModule } from './modules/grid-icons/index.js';
-import { mosaicModule } from './modules/mosaic/index.js';
-import { videoTilesModule } from './modules/video-tiles/index.js';
-import { gradientTilesModule } from './modules/gradient-tiles/index.js';
-import { soundTilesModule } from './modules/sound-tiles/index.js';
 import { initCustomCursor } from './ui/customCursor.js';
 import { renderDynamicLogo, renderSoundLogo } from './ui/dynamicLogo.js';
-import { getLang, setLang, onLangChange, AVAILABLE_LANGS } from './core/i18n.js';
+import { t, getLang, setLang, onLangChange, AVAILABLE_LANGS } from './core/i18n.js';
 
 initCustomCursor();
+
+// Módulos carregados SOB DEMANDA (import() dinâmico) — só o código da aba
+// que a pessoa está olhando desce na primeira visita. Antes, os 5 módulos
+// (e os motores de Som/Espelho/Gradiente, que são pesados) eram importados
+// estaticamente aqui e chegavam TODOS antes da primeira aba sequer pintar:
+// ~260 KB de JS a mais na carga inicial que ninguém tinha pedido ainda.
+// Cada entrada aqui é só um "cartão de visita" (id + rótulo, o suficiente
+// pra desenhar a aba); o módulo de verdade (mount/unmount) vem via load()
+// na primeira ativação — e é pré-buscado ao passar o mouse/focar a aba
+// (ver module-switcher.js), então o clique já encontra tudo pronto.
+// Ordem = ordem das abas no header.
+const MODULES = [
+  {
+    id: 'grid-icons',
+    label: () => t('tabGridIcons'),
+    load: () => import('./modules/grid-icons/index.js').then((m) => m.gridIconsModule),
+  },
+  {
+    id: 'mosaic',
+    label: () => t('tabMosaic'),
+    load: () => import('./modules/mosaic/index.js').then((m) => m.mosaicModule),
+  },
+  {
+    id: 'gradient',
+    label: () => t('tabGradient'),
+    load: () => import('./modules/gradient-tiles/index.js').then((m) => m.gradientTilesModule),
+  },
+  {
+    id: 'sound',
+    label: () => t('tabSound'),
+    load: () => import('./modules/sound-tiles/index.js').then((m) => m.soundTilesModule),
+  },
+  {
+    id: 'video',
+    label: () => t('tabVideo'),
+    load: () => import('./modules/video-tiles/index.js').then((m) => m.videoTilesModule),
+  },
+];
 
 const logoEl = document.getElementById('app-logo');
 const langSwitcherEl = document.getElementById('lang-switcher');
@@ -47,6 +80,11 @@ function updateLogoAndFavicon(moduleId) {
   document.head.appendChild(faviconEl);
 }
 
+// os dois relógios abaixo só fazem trabalho com a aba do NAVEGADOR
+// visível — em segundo plano (outra aba, janela minimizada) regenerar
+// SVG+favicon a cada 198ms era CPU/bateria jogada fora sem ninguém ver.
+const pageVisible = () => document.visibilityState !== 'hidden';
+
 // logo/favicon regeneram sozinhos enquanto a aba Espelho (id 'video') está
 // ativa — nas outras abas o logo continua do jeito de sempre (só muda ao
 // trocar de módulo/aba, nunca sozinho). renderDynamicLogo já sorteia uma
@@ -54,7 +92,7 @@ function updateLogoAndFavicon(moduleId) {
 // chamado nesse intervalo; moduleId omitido reaproveita currentModuleId
 // (não muda o tamanho da grade, só gera outra composição).
 setInterval(() => {
-  if (currentModuleId !== 'video') return;
+  if (currentModuleId !== 'video' || !pageVisible()) return;
   updateLogoAndFavicon();
 }, 1000);
 
@@ -64,7 +102,7 @@ setInterval(() => {
 // dynamicLogo.js), então o movimento em si já é ordeiro — esse intervalo só
 // controla a velocidade que ela desliza, não pulos aleatórios.
 setInterval(() => {
-  if (currentModuleId !== 'sound') return;
+  if (currentModuleId !== 'sound' || !pageVisible()) return;
   updateLogoAndFavicon();
 }, 198);
 
@@ -78,6 +116,8 @@ function renderLangSwitcher() {
     btn.className = 'lang-button';
     btn.textContent = lang.toUpperCase();
     btn.classList.toggle('active', lang === getLang());
+    btn.setAttribute('aria-pressed', String(lang === getLang()));
+    btn.setAttribute('lang', lang === 'pt' ? 'pt-BR' : lang);
     btn.addEventListener('click', () => setLang(lang));
     langSwitcherEl.appendChild(btn);
   });
@@ -88,4 +128,4 @@ onLangChange(renderLangSwitcher);
 
 const app = document.getElementById('app');
 const moduleTabsSlot = document.getElementById('module-tabs-slot');
-createModuleSwitcher(app, [gridIconsModule, mosaicModule, gradientTilesModule, soundTilesModule, videoTilesModule], moduleTabsSlot, { onActivate: updateLogoAndFavicon });
+createModuleSwitcher(app, MODULES, moduleTabsSlot, { onActivate: updateLogoAndFavicon });

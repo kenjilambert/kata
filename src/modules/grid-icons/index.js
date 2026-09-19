@@ -1769,6 +1769,7 @@ export const gridIconsModule = {
         const colorInput = document.createElement('input');
         colorInput.type = 'color';
         colorInput.className = 'stroke-color-input';
+        colorInput.setAttribute('aria-label', t('gradientStopsLabel'));
         colorInput.value = selectedStop.color;
         colorInput.addEventListener('input', () => {
           selectedStop.color = colorInput.value;
@@ -1964,6 +1965,7 @@ export const gridIconsModule = {
       const structureFileInput = document.createElement('input');
       structureFileInput.type = 'file';
       structureFileInput.accept = 'image/*';
+      structureFileInput.setAttribute('aria-label', t('referenceImageLabel'));
       structureFileInput.style.display = 'none';
       structureFileInput.addEventListener('change', () => {
         const file = structureFileInput.files?.[0];
@@ -2186,6 +2188,7 @@ export const gridIconsModule = {
         const strokeColorInput = document.createElement('input');
         strokeColorInput.type = 'color';
         strokeColorInput.className = 'stroke-color-input';
+        strokeColorInput.setAttribute('aria-label', t('strokeColorLabel'));
         strokeColorInput.value = state.strokeColor;
         strokeColorInput.addEventListener('input', () => {
           state.strokeColor = strokeColorInput.value;
@@ -2289,6 +2292,7 @@ export const gridIconsModule = {
             const grainColorInput = document.createElement('input');
             grainColorInput.type = 'color';
             grainColorInput.className = 'stroke-color-input';
+            grainColorInput.setAttribute('aria-label', t('grainColorLabel'));
             grainColorInput.value = state.grainColor;
             grainColorInput.addEventListener('input', () => {
               state.grainColor = grainColorInput.value;
@@ -2415,6 +2419,7 @@ export const gridIconsModule = {
       const shapeFileInput = document.createElement('input');
       shapeFileInput.type = 'file';
       shapeFileInput.accept = 'image/*';
+      shapeFileInput.setAttribute('aria-label', t('uploadShapeButton'));
       shapeFileInput.style.display = 'none';
       shapeFileInput.addEventListener('change', () => {
         const file = shapeFileInput.files?.[0];
@@ -2502,6 +2507,7 @@ export const gridIconsModule = {
       const backgroundColorInput = document.createElement('input');
       backgroundColorInput.type = 'color';
       backgroundColorInput.className = 'background-color-input';
+      backgroundColorInput.setAttribute('aria-label', t('backgroundColorLabel'));
       backgroundColorInput.value = state.background || '#ffffff';
       backgroundColorInput.addEventListener('input', () => {
         state.background = backgroundColorInput.value;
@@ -2550,6 +2556,7 @@ export const gridIconsModule = {
         const colorFileInput = document.createElement('input');
         colorFileInput.type = 'file';
         colorFileInput.accept = 'image/*';
+        colorFileInput.setAttribute('aria-label', t('colorImageLabel'));
         colorFileInput.style.display = 'none';
         colorFileInput.addEventListener('change', () => {
           const file = colorFileInput.files?.[0];
@@ -2593,6 +2600,7 @@ export const gridIconsModule = {
       const harmonyColorInput = document.createElement('input');
       harmonyColorInput.type = 'color';
       harmonyColorInput.title = t('harmonyBaseColorLabel');
+      harmonyColorInput.setAttribute('aria-label', t('harmonyBaseColorLabel'));
       harmonyColorInput.value = state.harmonyBaseColor;
       harmonyColorInput.addEventListener('input', () => {
         state.harmonyBaseColor = harmonyColorInput.value;
@@ -2673,6 +2681,7 @@ export const gridIconsModule = {
       presetNameInput.type = 'text';
       presetNameInput.className = 'preset-name-input';
       presetNameInput.placeholder = t('presetNamePlaceholder');
+      presetNameInput.setAttribute('aria-label', t('presetNamePlaceholder'));
 
       const savePresetButton = createButton({
         label: t('savePresetButton'),
@@ -2752,6 +2761,7 @@ export const gridIconsModule = {
       pasteCodeInput.type = 'text';
       pasteCodeInput.className = 'preset-name-input';
       pasteCodeInput.placeholder = t('pasteCodePlaceholder');
+      pasteCodeInput.setAttribute('aria-label', t('pasteCodePlaceholder'));
 
       const loadCodeButton = createButton({
         label: t('loadCodeButton'),

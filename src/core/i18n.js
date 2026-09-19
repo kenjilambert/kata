@@ -3,6 +3,7 @@ const STORAGE_KEY = 'gpg-lang';
 const STRINGS = {
   pt: {
     appTitle: 'Gerador Procedural Geométrico',
+    moduleLoadError: 'Não deu pra carregar esta aba. Confira a conexão e clique nela de novo.',
     tabGridIcons: 'Azulejo',
     comingSoonTab: 'Em breve',
     resultTitle: 'Resultado',
@@ -291,6 +292,7 @@ const STRINGS = {
   },
   en: {
     appTitle: 'Procedural Geometric Generator',
+    moduleLoadError: 'This tab could not load. Check your connection and click it again.',
     tabGridIcons: 'Tile',
     comingSoonTab: 'Coming soon',
     resultTitle: 'Result',
@@ -582,6 +584,16 @@ function readStoredLang() {
 let currentLang = STRINGS[readStoredLang()] ? readStoredLang() : 'pt';
 const listeners = new Set();
 
+// <html lang> acompanha o idioma escolhido — leitor de tela pronuncia com
+// o sotaque certo, tradutor automático do navegador não oferece traduzir
+// inglês "pra inglês", e hifenização/aspas seguem a língua real da UI.
+// pt → pt-BR (o que o index.html já declarava); en → en.
+const HTML_LANG = { pt: 'pt-BR', en: 'en' };
+function syncDocumentLang(lang) {
+  if (typeof document !== 'undefined') document.documentElement.lang = HTML_LANG[lang] ?? lang;
+}
+syncDocumentLang(currentLang);
+
 export function t(key) {
   return STRINGS[currentLang]?.[key] ?? STRINGS.pt[key] ?? key;
 }
@@ -595,6 +607,7 @@ export const AVAILABLE_LANGS = Object.keys(STRINGS);
 export function setLang(lang) {
   if (!STRINGS[lang] || lang === currentLang) return;
   currentLang = lang;
+  syncDocumentLang(lang);
   try {
     localStorage.setItem(STORAGE_KEY, lang);
   } catch (err) {

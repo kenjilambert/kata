@@ -1,3 +1,26 @@
+/* Space Grotesk auto-hospedada (fonte variável, 300–700, em /fonts/) —
+   antes vinha do Google Fonts: um CSS externo bloqueando a renderização +
+   uma segunda origem (fonts.gstatic.com) só pra fonte. Servida daqui, ela
+   entra no mesmo HTTP/3 do resto, é pré-carregada no index.html, e o CSP
+   fecha pra 'self' sem exceção nenhuma. Mesmos arquivos/unicode-range que
+   o Google entregava; latin cobre todo o pt-BR (acentos incluídos). */
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('../fonts/space-grotesk-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('../fonts/space-grotesk-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
 /* seleção de texto (arrastar o mouse em cima de um texto) usa o azul do
    site em vez do azul padrão do sistema operacional/navegador. */
 ::selection {
@@ -356,6 +379,9 @@ body {
   border-radius: var(--radius-pill);
   background: transparent;
   padding: 6px 12px;
+  /* alvo de toque: WCAG 2.5.8 pede pelo menos 24x24px; com só o padding o
+     botão ficava em ~26px aqui e 22px no mobile. */
+  min-height: 32px;
   font-size: 12px;
   font-weight: 600;
   color: var(--text-muted);
@@ -3029,7 +3055,9 @@ body {
      de ~500px e num celular de 360-412px as últimas ficavam CORTADAS e
      inalcançáveis — sem scroll horizontal, e o body é overflow:hidden. */
   .module-tabs {
-    height: 34px;
+    /* 38px de trilho = 34px de botão (era 34/30) — alvo de toque mais
+       confortável sem quebrar a linha única do header. */
+    height: 38px;
     gap: 2px;
     padding: 2px;
     /* flex EXPLÍCITO: como item flex de .brand, a fileira precisa poder
@@ -3088,8 +3116,9 @@ body {
   }
 
   .lang-button {
-    padding: 4px 8px;
+    padding: 4px 10px;
     font-size: 11px;
+    min-height: 28px;
   }
 
   .module-content {
